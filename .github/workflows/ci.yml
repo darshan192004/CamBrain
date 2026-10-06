@@ -17,7 +17,7 @@ jobs:
     name: Python quality + tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Every job runs on every trigger so its check name registers with GitHub
       # immediately; only the expensive steps are conditional. A job skipped via
@@ -74,7 +74,7 @@ jobs:
     name: AGPL licence scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Arm when the scan script exists
         id: arm
@@ -114,7 +114,7 @@ jobs:
     name: Frontend lint + build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No defaults.run.working-directory: GitHub fails the step if the target
       # directory does not exist, which would break the very guard that is

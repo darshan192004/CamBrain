@@ -294,7 +294,7 @@ select = [
     "I",    # isort
     "N",    # pep8-naming
     "UP",   # pyupgrade
-    "ASYNC",# flake8-async â€” catches blocking calls in async def
+    "ASYNC",# flake8-async — catches blocking calls in async def
     "B",    # flake8-bugbear
     "C4",   # comprehensions
     "SIM",  # simplify
@@ -327,7 +327,7 @@ quote-style = "double"
 indent-style = "space"
 ```
 
-> **`ASYNC` in the lint set is load-bearing, not decoration.** It flags a blocking call inside `async def` â€” exactly the bug that would stall every camera pipeline at once. This codebase runs eight concurrent pipelines on four cores; a synchronous 200ms call in the wrong place is an outage.
+> **`ASYNC` in the lint set is load-bearing, not decoration.** It flags a blocking call inside `async def` — exactly the bug that would stall every camera pipeline at once. This codebase runs eight concurrent pipelines on four cores; a synchronous 200ms call in the wrong place is an outage.
 
 - [ ] **Step 5: Write `.gitignore`**
 
@@ -449,8 +449,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Produces:
   - `get_logger(name: str) -> structlog.stdlib.BoundLogger`
   - `configure_logging(level: str = "INFO", json_output: bool | None = None) -> None`
-  - `REDACTED: str` â€” the `"â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"` sentinel
-  - `mask_url(url: str) -> str` â€” masks RTSP userinfo
+  - `REDACTED: str` — the `"••••••••"` sentinel
+  - `mask_url(url: str) -> str` — masks RTSP userinfo
 
 This module is the **structural** guarantee that secrets cannot be logged. Redaction is a processor in the chain, so it applies to every event regardless of what a caller passes. A developer cannot leak a password by forgetting, because there is no code path that bypasses the chain.
 
@@ -491,7 +491,7 @@ def test_no_secret_in_log_output(caplog: pytest.LogCaptureFixture) -> None:
         api_key=SECRET,
         secret=SECRET,
         authorization=SECRET,
-        camera_name="Back door",  # not a secret â€” must survive
+        camera_name="Back door",  # not a secret — must survive
     )
 
     output = _capture_logs(caplog)
@@ -589,7 +589,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import structlog
 
-REDACTED = "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+REDACTED = "••••••••"
 
 # Keys whose values are secret regardless of context.
 # Matching is case-insensitive and substring-based, so `RTSP_PASSWORD` and
@@ -688,8 +688,8 @@ def redact_event(
 ) -> dict[str, Any]:
     """structlog processor: redact secrets from an event before formatting.
 
-    This is deliberately a no-op on the logger and method name â€” structlog
-    processors take that signature â€” so it drops cleanly into the chain.
+    This is deliberately a no-op on the logger and method name — structlog
+    processors take that signature — so it drops cleanly into the chain.
     """
     return {
         key: (REDACTED if _is_secret_key(key) else redact_value(value))
@@ -825,7 +825,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Consumes: nothing
 - Produces: `CamBrainError` (base), `StreamError`, `DetectionError`, `InferenceError`, `RuleError`, `NotificationError`, `StorageError`, `AuthError`, `NotFoundError`, `ValidationError`, and `mask()` re-exported from `app.core.logging`
 
-Written before the services because every later module raises from this set. Errors are part of a module's public interface â€” callers branch on them â€” so the set must be settled before ten modules start defining their own.
+Written before the services because every later module raises from this set. Errors are part of a module's public interface — callers branch on them — so the set must be settled before ten modules start defining their own.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -890,7 +890,7 @@ def test_cause_is_preserved() -> None:
 python -m pytest backend/tests/test_errors.py -v
 ```
 
-Expected: FAIL â€” `ModuleNotFoundError: No module named 'app.core.errors'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'app.core.errors'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -925,7 +925,7 @@ class CamBrainError(Exception):
 class StreamError(CamBrainError):
     """Frame acquisition failed: transport, decode, or source lifecycle.
 
-    Sub-classing note: a transport failure is expected and recoverable â€” the
+    Sub-classing note: a transport failure is expected and recoverable — the
     pipeline reconnects. This is the single most frequently raised error in
     the codebase, which is why it has its own type rather than sharing one.
     """
@@ -948,7 +948,7 @@ class RuleError(CamBrainError):
 
 
 class NotificationError(CamBrainError):
-    """Alert delivery failed. Never fatal â€” the event is already persisted."""
+    """Alert delivery failed. Never fatal — the event is already persisted."""
 
 
 class StorageError(CamBrainError):
@@ -962,7 +962,7 @@ class AuthError(CamBrainError):
 class NotFoundError(CamBrainError):
     """A requested entity does not exist within the caller's tenant scope.
 
-    Used for cross-tenant access too. See `docs/SECURITY.md` Â§4.3: a 403 would
+    Used for cross-tenant access too. See `docs/SECURITY.md` §4.3: a 403 would
     confirm the row exists, so tenancy violations surface as not-found.
     """
 

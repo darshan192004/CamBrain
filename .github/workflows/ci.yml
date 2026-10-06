@@ -35,7 +35,7 @@ jobs:
             printf '## Python quality + tests\n\n**Pending** — `pyproject.toml` does not exist yet, so there is no toolchain to run. This job arms itself automatically once Phase 0 bootstraps the backend.\n' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.arm.outputs.armed == 'true'
         with:
           python-version: "3.13"
@@ -87,7 +87,7 @@ jobs:
             printf '## AGPL licence scan\n\n**Pending** — the scan script does not exist yet (Phase 0 Task 0.7). This gate arms itself automatically once it lands. Spec §3.3 makes it mandatory, so it must not be dropped when that task is revised.\n' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.arm.outputs.armed == 'true'
         with:
           python-version: "3.13"

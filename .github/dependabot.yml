@@ -1,0 +1,48 @@
+version: 2
+
+updates:
+  # Keeps actions/checkout, actions/setup-python, actions/setup-node and
+  # the-pr-agent/pr-agent version references current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+    groups:
+      github-actions-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # requirements.txt, requirements-dev.txt, requirements.lock.txt and
+  # pyproject.toml live at the repository root.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+    groups:
+      python-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # The Vue/Vite dashboard scaffolded by Phase 0 Task 0.8.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # cargo for /frontend/src-tauri is deliberately absent until Phase 6 creates
+  # a Cargo.toml. Dependabot reports "dependency file not found" for a
+  # manifestless directory, which would post a permanent error in the
+  # Security tab. Add it with the Tauri scaffold.

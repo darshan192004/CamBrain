@@ -1,0 +1,27 @@
+# PR-Agent configuration.
+# Docs: https://docs.pr-agent.ai/usage-guide/configuration_options/
+#
+# This file is read from the repository root on every run, so the model and
+# review rules stay reviewable in code review instead of being buried in the
+# workflow. Secrets never live here: the Gemini API key is injected as
+# GOOGLE_AI_STUDIO.GEMINI_API_KEY in .github/workflows/pr-agent.yml.
+
+[config]
+model = "gemini/gemini-3.8-flash"
+fallback_models = ["gemini/gemini-3.8-flash"]
+
+[github_action_config]
+auto_review = true
+auto_describe = true
+auto_improve = true
+
+[pr_reviewer]
+extra_instructions = """Review this repository against its own written rules, which live in docs/CODE_STYLE.md and docs/rules.md. The rules that carry real consequences:
+
+1. No AGPL anywhere, including in exported ONNX model files. `ultralytics` is banned by name. An AGPL dependency in the shipped app obliges disclosure of the whole application's source, which kills a closed-source product. Flag any dependency or import that could carry this obligation.
+2. Vue single-file components use `<script setup>` and JavaScript, never TypeScript. TypeScript is explicitly excluded from this stack.
+3. Every public function carries a JSDoc doc block. A public symbol with no doc block is a defect, not a style nit.
+4. Secrets must never reach a log sink. structlog redaction is mandatory at the logging call site.
+5. The sole egress from this application is the Telegram notifier. Any other outbound network call is a defect.
+
+Prioritise those five over formatting and style nits, and prefer flagging a missing test or a missing error path over anything cosmetic."""

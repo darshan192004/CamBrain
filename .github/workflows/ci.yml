@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python quality + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every job runs on every trigger so its check name registers with GitHub
+      # immediately; only the expensive steps are conditional. A job skipped via
+      # a job-level `if` reports no check, and an unreported check cannot be
+      # selected as a required status check. The skip is written to the step
+      # summary so it is visible rather than silent.
+      - name: Arm when the Python toolchain exists
+        id: arm
+        run: |
+          if [ -f pyproject.toml ]; then
+            echo "armed=true" >> "$GITHUB_OUTPUT"
+            printf '## Python quality + tests\n\n**Armed** — `pyproject.toml` found. Running ruff, ruff format, mypy and pytest.\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "armed=false" >> "$GITHUB_OUTPUT"
+            printf '## Python quality + tests\n\n**Pending** — `pyproject.toml` does not exist yet, so there is no toolchain to run. This job arms itself automatically once Phase 0 bootstraps the backend.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.arm.outputs.armed == 'true'
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: "requirements*.txt"
+
+      - name: Install dependencies
+        if: steps.arm.outputs.armed == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.lock.txt ]; then
+            # CI installs from the lock so a developer machine and CI resolve
+            # the same graph (phase-0-bootstrap.md, quality bar).
+            python -m pip install -r requirements.lock.txt
+          else
+            python -m pip install -r requirements.txt -r requirements-dev.txt
+          fi
+
+      - name: Ruff
+        if: steps.arm.outputs.armed == 'true'
+        run: ruff check backend
+
+      - name: Ruff format
+        if: steps.arm.outputs.armed == 'true'
+        run: ruff format --check backend
+
+      - name: Mypy
+        if: steps.arm.outputs.armed == 'true'
+        run: mypy backend/app
+
+      - name: Unit and integration tests
+        if: steps.arm.outputs.armed == 'true'
+        run: pytest -m "not rtsp and not slow" --cov=app --cov-report=term-missing
+
+  licence:
+    name: AGPL licence scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Arm when the scan script exists
+        id: arm
+        run: |
+          if [ -f backend/scripts/check_licences.py ]; then
+            echo "armed=true" >> "$GITHUB_OUTPUT"
+            printf '## AGPL licence scan\n\n**Armed** — `backend/scripts/check_licences.py` found. Running the scan.\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "armed=false" >> "$GITHUB_OUTPUT"
+            printf '## AGPL licence scan\n\n**Pending** — the scan script does not exist yet (Phase 0 Task 0.7). This gate arms itself automatically once it lands. Spec §3.3 makes it mandatory, so it must not be dropped when that task is revised.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.arm.outputs.armed == 'true'
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: "requirements*.txt"
+
+      # python_records() reads importlib.metadata.distributions(), so the
+      # packages must actually be installed for the scan to see anything.
+      - name: Install dependencies
+        if: steps.arm.outputs.armed == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.lock.txt ]; then
+            python -m pip install -r requirements.lock.txt
+          else
+            python -m pip install -r requirements.txt -r requirements-dev.txt
+          fi
+
+      - name: Licence scan (fails on AGPL)
+        if: steps.arm.outputs.armed == 'true'
+        run: python backend/scripts/check_licences.py
+
+  frontend:
+    name: Frontend lint + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No defaults.run.working-directory: GitHub fails the step if the target
+      # directory does not exist, which would break the very guard that is
+      # supposed to tolerate its absence.
+      - name: Arm when the frontend toolchain exists
+        id: arm
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "armed=true" >> "$GITHUB_OUTPUT"
+            printf '## Frontend lint + build\n\n**Armed** — `frontend/package.json` found. Running eslint, prettier and the vite build.\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "armed=false" >> "$GITHUB_OUTPUT"
+            printf '## Frontend lint + build\n\n**Pending** — `frontend/package.json` does not exist yet. This job arms itself automatically once Phase 0 Task 0.8 scaffolds the dashboard.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.arm.outputs.armed == 'true'
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.arm.outputs.armed == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: ESLint
+        if: steps.arm.outputs.armed == 'true'
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Prettier
+        if: steps.arm.outputs.armed == 'true'
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Build
+        if: steps.arm.outputs.armed == 'true'
+        working-directory: frontend
+        run: npm run build

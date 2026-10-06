@@ -130,7 +130,7 @@ jobs:
             printf '## Frontend lint + build\n\n**Pending** — `frontend/package.json` does not exist yet. This job arms itself automatically once Phase 0 Task 0.8 scaffolds the dashboard.\n' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.arm.outputs.armed == 'true'
         with:
           node-version: "24"

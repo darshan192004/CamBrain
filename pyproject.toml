@@ -1,0 +1,62 @@
+[project]
+name = "cambrain"
+version = "0.1.0"
+description = "Edge AI sidecar for existing CCTV systems"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "rtsp: requires the MediaMTX Docker container (deselect with '-m \"not rtsp\"')",
+    "slow: long-running; soak and benchmark tests (deselect with '-m \"not slow\"')",
+]
+addopts = "-ra --strict-markers --strict-config"
+filterwarnings = ["error::DeprecationWarning:app.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["backend"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "ASYNC",# flake8-async — catches blocking calls in async def
+    "B",    # flake8-bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "RET",  # return consistency
+    "PTH",  # pathlib
+    "TID",  # tidy imports
+    "ARG",  # unused arguments
+]
+ignore = [
+    "E501",  # line length is handled by the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may use asserts, magic numbers, and private access.
+"backend/tests/*" = ["S101", "PLR2004", "SLF001"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+exclude = ["backend/migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["av.*", "onnxruntime.*", "cv2.*"]
+ignore_missing_imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

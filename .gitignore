@@ -1,0 +1,51 @@
+# --- Model weights: fetched by scripts/fetch_model.py, never committed ---
+models/*.onnx
+models/*.bin
+models/*.pt
+
+# --- Runtime data ---
+*.db
+*.db-wal
+*.db-shm
+data/
+clips/
+logs/
+keys/
+
+# --- Generated test fixtures: rebuilt by tests/make_fixtures.py ---
+backend/tests/fixtures/clips/*.mp4
+
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# --- Node ---
+node_modules/
+frontend/dist/
+.vite/
+
+# --- Rust / Tauri ---
+frontend/src-tauri/target/
+frontend/src-tauri/gen/
+
+# --- Secrets: never, under any circumstance ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

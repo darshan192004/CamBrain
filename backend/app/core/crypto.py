@@ -53,8 +53,15 @@ if sys.platform == "win32":
 
         ctypes.set_last_error(0)
         call = crypt32.CryptUnprotectData if unprotect else crypt32.CryptProtectData
-        if not call(ctypes.byref(source), None, None, None, None,
-                    CRYPTPROTECT_UI_FORBIDDEN, ctypes.byref(target)):
+        if not call(
+            ctypes.byref(source),
+            None,
+            None,
+            None,
+            None,
+            CRYPTPROTECT_UI_FORBIDDEN,
+            ctypes.byref(target),
+        ):
             raise CryptoError(f"DPAPI call failed (WinError {ctypes.get_last_error()})")
         try:
             return ctypes.string_at(target.pbData, target.cbData)

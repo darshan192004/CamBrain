@@ -79,9 +79,7 @@ def test_exception_messages_are_redacted() -> None:
         ("not a url at all", "not a url at all", "\0"),
     ],
 )
-def test_mask_url(
-    raw: str, expected_contains: str, expected_excludes: str
-) -> None:
+def test_mask_url(raw: str, expected_contains: str, expected_excludes: str) -> None:
     masked = mask_url(raw)
     assert expected_contains in masked
     assert expected_excludes not in masked
@@ -94,9 +92,7 @@ def test_mask_url(
         ("rtsp://admin:P@ssw0rd@10.0.0.5:554/stream", "ssw0rd"),
     ],
 )
-def test_mask_url_credentials_containing_at_or_slash(
-    raw: str, secret_fragment: str
-) -> None:
+def test_mask_url_credentials_containing_at_or_slash(raw: str, secret_fragment: str) -> None:
     """A password with '@' or '/' must still be fully removed."""
     masked = mask_url(raw)
     assert secret_fragment not in masked
@@ -139,4 +135,3 @@ def test_dash_separated_secret_keys_are_redacted() -> None:
     assert redacted["safe"] == "keep-me"
     assert redacted["detail"] == "keep-me"
     assert redacted["rtsp_url"] == "rtsp://10.0.0.5:554/stream"
-

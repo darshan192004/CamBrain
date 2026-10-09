@@ -49,3 +49,5 @@ frontend/src-tauri/gen/
 Thumbs.db
 desktop.ini
 .DS_Store
+# RTSP harness state — regenerated per test session
+backend/tests/rtsp/.mediamtx/

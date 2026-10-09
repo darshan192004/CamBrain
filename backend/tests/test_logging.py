@@ -15,7 +15,7 @@ def _capture_logs(capsys: pytest.CaptureFixture[str]) -> str:
 
 def test_no_secret_in_log_output(capsys: pytest.CaptureFixture[str]) -> None:
     """Every REDACT_KEY must be stripped from emitted log records."""
-    configure_logging(level="DEBUG")
+    configure_logging(level="DEBUG", json_output=False)
 
     logger = get_logger("test")
     logger.info(
@@ -38,7 +38,7 @@ def test_no_secret_in_log_output(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_rtsp_url_userinfo_is_masked(capsys: pytest.CaptureFixture[str]) -> None:
     """An RTSP URL in a log must not carry credentials."""
-    configure_logging(level="DEBUG")
+    configure_logging(level="DEBUG", json_output=False)
 
     url = f"rtsp://admin:{SECRET}@10.0.0.5:554/Streaming/Channels/101"
     logger = get_logger("test")
@@ -85,3 +85,58 @@ def test_mask_url(
     masked = mask_url(raw)
     assert expected_contains in masked
     assert expected_excludes not in masked
+
+
+@pytest.mark.parametrize(
+    ("raw", "secret_fragment"),
+    [
+        ("rtsp://user:p/ss@10.0.0.5:554/stream", "p/ss"),
+        ("rtsp://admin:P@ssw0rd@10.0.0.5:554/stream", "ssw0rd"),
+    ],
+)
+def test_mask_url_credentials_containing_at_or_slash(
+    raw: str, secret_fragment: str
+) -> None:
+    """A password with '@' or '/' must still be fully removed."""
+    masked = mask_url(raw)
+    assert secret_fragment not in masked
+    assert "10.0.0.5" in masked, "host is needed to diagnose"
+    assert "***" in masked
+
+
+def test_credential_in_event_key_is_masked() -> None:
+    """A credential embedded in an event key must not survive verbatim."""
+    from app.core.logging import redact_event
+
+    url = "rtsp://admin:hunter2XYZ@10.0.0.5:554/stream"
+    redacted = redact_event({url: "v"})
+    (key, value) = next(iter(redacted.items()))
+
+    assert "hunter2XYZ" not in key
+    assert "10.0.0.5" in key, "host is needed to diagnose"
+    assert value == "v"
+
+
+def test_dash_separated_secret_keys_are_redacted() -> None:
+    """`-` and `_` spellings of secret keys must redact identically."""
+    from app.core.logging import redact_event
+
+    event = {
+        "X-API-Key": SECRET,
+        "api-key": SECRET,
+        "X-Auth-Token": SECRET,
+        "camera_name": "keep-me",
+        "safe": "keep-me",
+        "detail": "keep-me",
+        "rtsp_url": "rtsp://10.0.0.5:554/stream",
+    }
+    redacted = redact_event(event)
+
+    assert redacted["X-API-Key"] == REDACTED
+    assert redacted["api-key"] == REDACTED
+    assert redacted["X-Auth-Token"] == REDACTED
+    assert redacted["camera_name"] == "keep-me"
+    assert redacted["safe"] == "keep-me"
+    assert redacted["detail"] == "keep-me"
+    assert redacted["rtsp_url"] == "rtsp://10.0.0.5:554/stream"
+

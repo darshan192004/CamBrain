@@ -53,7 +53,11 @@ REDACT_KEYS: frozenset[str] = frozenset(
 _REDACT_SUFFIXES = ("_enc", "_encrypted", "_ciphertext")
 
 # rtsp://user:password@host:port/path  ->  rtsp://***:***@host:port/path
-_URL_CREDENTIALS = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)(?P<creds>[^/@\s]+)@")
+# Whitespace-bounded and greedy so the credentials stretch to the LAST '@' in
+# the token; a password may legitimately contain '@' or '/'. A URL that has an
+# '@' in its path but no userinfo is intentionally over-redacted: security over
+# precision.
+_URL_CREDENTIALS = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)(?P<creds>[^\s]+)@")
 
 # A secret pasted into free text ("failed with password hunter2").
 # Catches keyword-prefixed values without over-matching ordinary prose.
@@ -97,7 +101,7 @@ def _is_secret_key(key: str) -> bool:
     not match a `REDACT_KEYS` entry exactly. `_REDACT_SUFFIXES` catches
     encrypted-at-rest columns whose base name carries no secret keyword.
     """
-    normalised = key.lower()
+    normalised = key.lower().replace("-", "_")
     if any(secret in normalised for secret in REDACT_KEYS):
         return True
     return any(normalised.endswith(suffix) for suffix in _REDACT_SUFFIXES)
@@ -113,8 +117,10 @@ def redact_value(value: Any) -> Any:
         return mask_url(value)
     if isinstance(value, dict):
         return redact_event(value)
-    if isinstance(value, (list, tuple)):
-        return type(value)(redact_value(item) for item in value)
+    if isinstance(value, list):
+        return [redact_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_value(item) for item in value)
     return value
 
 
@@ -125,7 +131,7 @@ def redact_event(event_dict: Mapping[str, Any]) -> dict[str, Any]:
     chain calls `_redact_processor`, which adapts the structlog signature.
     """
     return {
-        key: (REDACTED if _is_secret_key(key) else redact_value(value))
+        mask_url(key): (REDACTED if _is_secret_key(key) else redact_value(value))
         for key, value in event_dict.items()
     }
 
@@ -179,9 +185,10 @@ def configure_logging(level: str = "INFO", json_output: bool | None = None) -> N
     logging.getLogger("watchfiles").setLevel(logging.WARNING)
 
     renderer = (
-        # ensure_ascii=False keeps the REDACTED sentinel and non-ASCII field
-        # values legible instead of collapsing them to \uXXXX escapes.
-        structlog.processors.JSONRenderer(ensure_ascii=False)
+        # Default ensure_ascii=True escapes non-ASCII safely; a non-UTF-8 sink
+        # would otherwise raise UnicodeEncodeError inside StreamHandler, which
+        # swallows the whole record and can drop security lines entirely.
+        structlog.processors.JSONRenderer()
         if json_output
         else structlog.dev.ConsoleRenderer(colors=sys.stdout.isatty())
     )

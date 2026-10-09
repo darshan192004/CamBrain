@@ -415,9 +415,13 @@ Expected: `runtime deps OK`; pytest exits 5 (no tests collected) which is succes
 
 - [ ] **Step 9: Generate the lock file**
 
+Do **not** use a bare `pip freeze > requirements.lock.txt`: under Windows PowerShell 5.1 that redirect writes UTF-16LE with a BOM, so git stores the lock as an unreviewable binary blob. Write UTF-8/LF explicitly:
+
 ```powershell
-python -m pip freeze > requirements.lock.txt
+.\.venv\Scripts\python.exe -c "import io,subprocess,sys; out=subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True).replace('\r\n','\n'); io.open('requirements.lock.txt','w',encoding='utf-8',newline='\n').write(out)"
 ```
+
+Expected: `requirements.lock.txt` starts with a package name (`alembic==…`), not a BOM; `git diff --numstat` reports line counts, not `Bin`.
 
 - [ ] **Step 10: Commit**
 

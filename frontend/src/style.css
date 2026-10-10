@@ -1,0 +1,4 @@
+/* Tailwind v4 is CSS-first: the utility layer is imported, not generated
+   from a JS config. Design tokens arrive in Phase 4 as CSS variables —
+   hardcoded hex in components is prohibited (Global Constraints). */
+@import "tailwindcss";

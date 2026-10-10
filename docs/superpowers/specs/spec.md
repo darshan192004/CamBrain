@@ -107,7 +107,7 @@ Each is mapped to a proving test in §12.
 | Components | shadcn-vue (Radix-Vue) | MIT |
 | Shell | Tauri v2 | MIT / Apache-2.0 |
 | Tests | pytest, pytest-asyncio, pytest-cov | MIT |
-| RTSP test server | MediaMTX (Docker) | MIT |
+| RTSP test server | MediaMTX, native binary (no Docker) | MIT |
 
 **Explicitly excluded:** any `ultralytics` package · Celery · Redis · React · TypeScript · PostgreSQL · `opencv-python` (full build) · Node-based video transcoding.
 
@@ -121,7 +121,7 @@ Verified on the development machine, 2026-10-05.
 | Node | 24.19.0 | ready |
 | npm | 11.17.0 | ready |
 | Cargo / Rust | **absent** | install for Phase 6 |
-| Docker Desktop | installed, **daemon stopped** | start for RTSP tests |
+| Docker Desktop | not used | RTSP server runs natively; Docker is not required |
 | `ffmpeg` on PATH | absent | not required — PyAV bundles FFmpeg |
 | `av`, `onnxruntime`, `sqlalchemy`, `alembic`, `cv2`, `cryptography`, `structlog`, `httpx` | **absent** | install |
 | `fastapi` 0.140.0, `numpy` 2.4.6, `pytest` 9.1.1, `pytest-asyncio` 1.4.0 | present | satisfied |
@@ -592,7 +592,7 @@ Seven phases. Each ends with something demonstrable.
 
 ### 10.1 Phase 0 rationale
 
-Bootstrap is a numbered phase rather than an implicit prerequisite. Eight missing runtime packages and a stopped Docker daemon are exactly the conditions under which a Phase 1 failure is ambiguous — is the streaming code broken, or is ONNX Runtime not installed?
+Bootstrap is a numbered phase rather than an implicit prerequisite. Eight missing runtime packages and a missing RTSP test server are exactly the conditions under which a Phase 1 failure is ambiguous — is the streaming code broken, or is ONNX Runtime not installed?
 
 One extra step, bought: after Phase 0, every later failure is unambiguously a code failure.
 
@@ -634,11 +634,11 @@ Building both decoders now was rejected: it would write RT-DETR's decoder withou
 
 - A generated synthetic clip via `FileSource`
 - A `MockDetector` returning fixture detections
-- **MediaMTX in Docker**, streaming a local file over real RTSP
+- **MediaMTX (native binary)**, streaming a local file over real RTSP
 
 MediaMTX is used rather than a mock because a mock would never exercise the code most likely to be wrong: PyAV RTSP option handling, handshake behaviour, and reconnection against a real server. MediaMTX is a conformant RTSP server, not a mock.
 
-RTSP tests are marked `@pytest.mark.rtsp`, excluded locally with `pytest -m "not rtsp"`. If Docker is unavailable they **skip with a clear message — never silently pass.**
+RTSP tests are marked `@pytest.mark.rtsp`, excluded locally with `pytest -m "not rtsp"`. If no MediaMTX binary is available they **skip with a clear message — never silently pass.**
 
 ### 11.2 Fixture strategy
 
@@ -697,7 +697,7 @@ Every NFR from §1.5 and every hard constraint, mapped to the test that proves i
 | **Memory flat** | `test_stream_manager.py::test_memory_is_flat_across_reconnects` | 1 |
 | Idle CPU < 5% | `test_pipeline.py::test_idle_cpu_under_5_percent` | 1 |
 | Works at 1080p | `test_source.py::test_1080p_input_downscaled` | 1 |
-| **Hardware-free tests** | `test_pipeline.py` runs with Docker down | 1 |
+| **Hardware-free tests** | `test_pipeline.py` runs with no RTSP server | 1 |
 | Hardware floor / graceful degradation | `test_tiers.py::test_tier_falls_back_on_low_capability` | 3 |
 | Detection latency < 2s | `test_pipeline.py::test_motion_to_alert_under_2s` | 3 |
 | Model output validated | `test_detector.py::test_rejects_malformed_output` | 3 |

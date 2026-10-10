@@ -10,12 +10,13 @@ natively (no Docker): pin your version by dropping one release into
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import subprocess
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 
 import av
@@ -29,6 +30,8 @@ STREAM_NAME = "cambbrain"
 RTSP_URL = f"rtsp://{RTSP_HOST}:{RTSP_PORT}/{STREAM_NAME}"
 STARTUP_TIMEOUT_S = 60
 CONFIG_DIR = Path(__file__).parent / ".mediamtx"
+
+_PUBLISH_PAUSE = threading.Event()
 
 CONFIG = f"""\
 logLevel: warn
@@ -83,17 +86,27 @@ def _publish(clip: Path, stop: threading.Event) -> None:
 def _publish_pass(
     clip: Path, out_stream: av.Stream, sink: av.OutputContainer, stop: threading.Event
 ) -> None:
-    """Stream one full pass of the clip through the shared publish session."""
+    """Stream one full pass of the clip through the shared publish session.
+
+    Frames are paced at the clip's real 15 fps: blasting a 300-frame clip at
+    max encode speed floods the RTSP interleave queue and kills the session,
+    which flaps the path (readers see 404 windows). The encoder is also
+    never flushed between passes — flush signals end-of-stream, and a live
+    camera session has no end until it disconnects.
+    """
+    frame_interval = 1 / 15
     with av.open(str(clip)) as source:
         in_stream = source.streams.video[0]
         for frame in source.decode(in_stream):
+            if _PUBLISH_PAUSE.is_set():
+                while _PUBLISH_PAUSE.is_set():
+                    time.sleep(0.1)
             if stop.is_set():
                 return
             rgb = av.VideoFrame.from_ndarray(frame.to_ndarray(format="rgb24"), format="rgb24")
             for packet in out_stream.encode(rgb):
                 sink.mux(packet)
-        for packet in out_stream.encode():
-            sink.mux(packet)
+            time.sleep(frame_interval)
 
 
 def _await_frames(timeout: int) -> None:
@@ -151,3 +164,24 @@ def mediamtx_url() -> Iterator[str]:
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait(timeout=5)
+
+
+@pytest.fixture(scope="session")
+def mediamtx_pause(
+    mediamtx_url: str,
+) -> Iterator[tuple[str, Callable[[float], Awaitable[None]]]]:
+    """RTSP URL plus an async ``pause(seconds)`` that silences the publisher.
+
+    The publisher keeps its RTSP session open but sends no frames for the
+    requested duration, then resumes. Used by reconnect-recovery tests to
+    simulate a transient network stall without killing the server.
+    """
+
+    async def pause(seconds: float) -> None:
+        _PUBLISH_PAUSE.set()
+        try:
+            await asyncio.sleep(seconds)
+        finally:
+            _PUBLISH_PAUSE.clear()
+
+    yield (mediamtx_url, pause)

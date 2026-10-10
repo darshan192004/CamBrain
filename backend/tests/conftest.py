@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.make_fixtures import CLIP_NAMES, ensure_clip
+from tests.rtsp.conftest import mediamtx_pause, mediamtx_url  # noqa: F401
 
 
 @pytest.fixture

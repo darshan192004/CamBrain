@@ -122,7 +122,9 @@ def _await_frames(timeout: int) -> None:
             ) as probe:
                 next(probe.decode(probe.streams.video[0]))
             return
-        except (av.error.FFmpegError, OSError, StopIteration) as exc:
+        except (av.error.FFmpegError, OSError, StopIteration, IndexError) as exc:
+            # IndexError: the probe connected before the publisher finished
+            # initializing the video track, so `streams.video` is still empty.
             last_error = exc
             time.sleep(1.0)
     raise RuntimeError(f"MediaMTX served no frame within {timeout}s: {last_error}")

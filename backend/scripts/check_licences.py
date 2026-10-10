@@ -69,8 +69,23 @@ def python_records() -> list[Record]:
 
 
 def frontend_records(lock_path: Path = FRONTEND_LOCK) -> list[Record]:
-    """Licence text for every locked npm package. Absent lock = no records."""
+    """Licence text for every locked npm package.
+
+    A missing lock file while the manifest is present is a hard error, not an
+    empty scan: silently scanning zero packages makes the gate a no-op and lets
+    an AGPL dependency ship unnoticed. Exit code 2 = could not determine.
+    """
+    manifest = lock_path.parent / "package.json"
     if not lock_path.exists():
+        if manifest.exists():
+            print(
+                f"ERROR: {manifest} exists but {lock_path} does not. "
+                "Run `npm install --package-lock-only` in frontend/ and commit "
+                "the lock file — without it the licence gate cannot see any "
+                "npm dependency.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
         return []
     data = json.loads(lock_path.read_text(encoding="utf-8"))
     records: list[Record] = []

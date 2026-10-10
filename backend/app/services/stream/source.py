@@ -35,8 +35,12 @@ class Frame:
 class FrameSource(Protocol):
     """Produces frames from something. The seam that removes hardware."""
 
-    async def frames(self) -> AsyncIterator[Frame]:
-        """Yield frames until cancelled or the source is exhausted."""
+    def frames(self) -> AsyncIterator[Frame]:
+        """Yield frames until cancelled or the source is exhausted.
+
+        An async generator function: calling it returns the iterator, so
+        ``async for frame in source.frames()`` needs no ``await``.
+        """
         ...
 
     async def close(self) -> None:

@@ -129,9 +129,15 @@ def redact_event(event_dict: Mapping[str, Any]) -> dict[str, Any]:
 
     Pure, single-argument so it is directly testable. The structlog processor
     chain calls `_redact_processor`, which adapts the structlog signature.
+
+    Non-string keys (int port numbers, enum members) are passed through
+    untouched: `mask_url` and `_is_secret_key` both assume `str`, and a
+    `TypeError` raised inside a log processor would crash the log call itself.
     """
     return {
-        mask_url(key): (REDACTED if _is_secret_key(key) else redact_value(value))
+        (mask_url(key) if isinstance(key, str) else key): (
+            REDACTED if isinstance(key, str) and _is_secret_key(key) else redact_value(value)
+        )
         for key, value in event_dict.items()
     }
 
@@ -212,7 +218,12 @@ def configure_logging(level: str = "INFO", json_output: bool | None = None) -> N
     )
 
     formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=[],
+        # Redaction runs here too, for records that arrive from *stdlib*
+        # loggers (uvicorn, httpx, or any `logging.getLogger(name)` module
+        # such as crypto.py) rather than through the structlog chain above.
+        # Without this, a secret in a third-party log line reaches the sink
+        # unmasked — the exact leak the redaction chain exists to prevent.
+        foreign_pre_chain=[_redact_processor, redact_exc_info],
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             renderer,

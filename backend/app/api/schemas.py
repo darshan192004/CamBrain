@@ -363,3 +363,144 @@ class RuleOut(BaseModel):
     severity: str
     notify: bool
     created_at: datetime
+
+
+class EventDetectionOut(BaseModel):
+    """One detection row inside an event."""
+
+    class_name: str
+    confidence: float
+    bbox: list[float]
+    zone_name: str | None
+
+
+class CameraRef(BaseModel):
+    """Minimal camera reference embedded in an event."""
+
+    id: int
+    name: str
+
+
+class RuleRef(BaseModel):
+    """Minimal rule reference embedded in an event."""
+
+    id: int
+    name: str
+
+
+class EventOut(BaseModel):
+    """Event list/detail response. URLs are opaque, resolved by event id."""
+
+    id: int
+    camera: CameraRef
+    rule: RuleRef | None
+    severity: str
+    summary: str | None
+    started_at: datetime
+    ended_at: datetime | None
+    duration_ms: int | None
+    acknowledged: bool
+    has_clip: bool
+    thumbnail_url: str
+    clip_url: str
+    detections: list[EventDetectionOut]
+
+
+class EventListOut(BaseModel):
+    """Offset-paginated event list."""
+
+    items: list[EventOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class AcknowledgeBulkRequest(BaseModel):
+    """POST /events/acknowledge-bulk body."""
+
+    event_ids: list[int] = Field(min_length=1)
+
+
+class EventStatsOut(BaseModel):
+    """GET /events/stats response."""
+
+    total: int
+    by_severity: dict[str, int]
+    by_camera: dict[str, int]
+
+
+class UserCreate(BaseModel):
+    """POST /users body."""
+
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=8, max_length=128)
+    role: Literal["admin", "viewer"] = "viewer"
+
+
+class UserPatch(BaseModel):
+    """PATCH /users/{id}. Role or password can change; demoting the last admin is 409."""
+
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    role: Literal["admin", "viewer"] | None = None
+    is_active: bool | None = None
+
+
+class UserOut(BaseModel):
+    """User response. Password hash is never exposed."""
+
+    id: int
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None
+
+
+class SettingsOut(BaseModel):
+    """GET /settings response (per-site configuration)."""
+
+    name: str
+    timezone: str
+    retention_days: int
+    disk_quota_pct: int
+
+
+class SettingsPatch(BaseModel):
+    """PATCH /settings. Admin only."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    retention_days: int | None = Field(default=None, ge=1, le=365)
+    disk_quota_pct: int | None = Field(default=None, ge=10, le=95)
+
+
+class NotifierOut(BaseModel):
+    """A notifier entry (id is an index into the site's notifier_config list)."""
+
+    id: int
+    kind: str
+    enabled: bool
+    config: dict[str, object]
+
+
+class NotifierCreate(BaseModel):
+    """POST /notifiers body."""
+
+    kind: Literal["telegram", "webhook"] = "telegram"
+    enabled: bool = True
+    config: dict[str, object] = Field(default_factory=dict)
+
+
+class NotifierPatch(BaseModel):
+    """PATCH /notifiers/{id}."""
+
+    enabled: bool | None = None
+    config: dict[str, object] | None = None
+
+
+class HealthOut(BaseModel):
+    """GET /system/health. Unauthenticated; exposes only these three fields."""
+
+    status: str
+    version: str
+    uptime_s: float

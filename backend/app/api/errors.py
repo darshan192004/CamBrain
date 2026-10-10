@@ -17,6 +17,7 @@ from app.core.errors import (
 )
 from app.core.errors import (
     CamBrainError,
+    ConflictError,
     NotFoundError,
     StorageError,
     ValidationError,
@@ -74,6 +75,10 @@ def install_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422, content=_envelope("VALIDATION_ERROR", str(exc), request)
         )
+
+    @app.exception_handler(ConflictError)
+    async def _conflict(request: Request, exc: ConflictError) -> JSONResponse:
+        return JSONResponse(status_code=409, content=_envelope("CONFLICT", str(exc), request))
 
     @app.exception_handler(StorageError)
     async def _storage(request: Request, exc: StorageError) -> JSONResponse:

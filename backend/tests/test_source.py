@@ -7,6 +7,8 @@ by pipeline tests; the frame contract is proven here.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import numpy as np
@@ -103,3 +105,56 @@ def test_file_source_satisfies_protocol(clip_path: Path) -> None:
     src: FrameSource = FileSource(clip_path)
     assert callable(src.frames)
     assert callable(src.close)
+
+
+async def test_1080p_input_downscaled() -> None:
+    """A 1080p input works end to end (verification matrix §12 row).
+
+    The gate downscales internally to its 640x360 work size; the consumer
+    still receives the frame at its native size — no hidden resize of the
+    data other stages see.
+    """
+    import time
+
+    import numpy as np
+
+    from app.services.stream.pipeline import CameraConfig, CameraPipeline
+    from app.services.stream.source import Frame
+
+    received: list[Frame] = []
+
+    async def sink(frame: Frame) -> None:
+        received.append(frame)
+
+    class LoopSource:
+        async def frames(self) -> AsyncIterator[Frame]:
+            i = 0
+            while True:
+                arr = np.full((1080, 1920, 3), 20, dtype=np.uint8)
+                x = (i * 90) % 1500
+                arr[200:800, x : x + 120] = 240
+                yield Frame(arr, time.monotonic(), 1920, 1080)
+                i += 1
+                # A source must suspend: without this the generator never
+                # yields to the loop and the test's sleep() never fires.
+                await asyncio.sleep(0)
+
+        async def close(self) -> None:
+            return None
+
+    pipeline = CameraPipeline(
+        CameraConfig("cam", "Cam", "loop://1080p", sample_fps=5.0),
+        LoopSource(),
+        sink,
+    )
+    task = asyncio.create_task(pipeline.run())
+    try:
+        await asyncio.sleep(1.0)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert received
+    assert received[0].width == 1920
+    assert received[0].height == 1080
+    assert received[0].data.shape == (1080, 1920, 3)

@@ -14,7 +14,9 @@ import av
 from app.services.stream.motion import MotionGate
 from app.services.stream.source import Frame
 
-WARMUP = 30  # MOG2 needs a few frames to build a background model.
+# MOG2 needs ~30 samples to build a background model; the gate samples every
+# 4th frame, so 30 samples span 120 input frames.
+WARMUP = 120
 
 
 def _to_frame(raw) -> Frame:  # type: ignore[no-untyped-def]

@@ -1,13 +1,16 @@
-"""MediaMTX container fixture for real-RTSP tests.
+"""MediaMTX fixture for real-RTSP tests.
 
-Spec §11.1: RTSP tests are marked `rtsp`. When Docker is unavailable they
-skip with a visible message — never silently pass. A silently-passing skip
-is indistinguishable from a green suite, which is how a broken transport
-layer survives to production.
+Spec §11.1: RTSP tests are marked `rtsp`. When no MediaMTX binary is
+available they skip with a visible message — never silently pass. A
+silently-passing skip is indistinguishable from a green suite, which is
+how a broken transport layer survives to production. MediaMTX runs
+natively (no Docker): pin your version by dropping one release into
+``backend/tests/rtsp/.tools/`` or putting ``mediamtx`` on PATH.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import threading
@@ -20,7 +23,6 @@ import pytest
 
 from tests.make_fixtures import ensure_clip
 
-MEDIAMTX_IMAGE = "bluenviron/mediamtx:1.11"
 RTSP_HOST = "127.0.0.1"
 RTSP_PORT = 8554
 STREAM_NAME = "cambbrain"
@@ -32,51 +34,66 @@ CONFIG = f"""\
 logLevel: warn
 rtsp: yes
 rtspAddress: :{RTSP_PORT}
-gopCache: no
 paths:
   {STREAM_NAME}:
 """
 
 
-def docker_available() -> bool:
-    """True when the daemon answers — `docker` on PATH alone proves nothing."""
-    if shutil.which("docker") is None:
-        return False
-    try:
-        result = subprocess.run(["docker", "info"], capture_output=True, timeout=30, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0
+def _mediamtx_exe() -> str | None:
+    """Locate a MediaMTX binary: explicit env, bundled tool, or PATH."""
+    env_exe = os.environ.get("CAMBRAIN_MEDIAMTX")
+    if env_exe and Path(env_exe).is_file():
+        return env_exe
+    bundled = Path(__file__).parent / ".tools" / "mediamtx.exe"
+    if bundled.is_file():
+        return str(bundled)
+    return shutil.which("mediamtx")
 
 
 def _publish(clip: Path, stop: threading.Event) -> None:
-    """Push the clip to MediaMTX in a loop so readers always have a source."""
+    """Keep one long-lived RTSP publish open so readers never see an EOF gap.
+
+    Reopening the RTSP sink after every clip pass leaves dead windows where a
+    new reader connects and gets EOF instead of frames. The sink therefore
+    lives for the whole publish: only the local source file is reopened between
+    passes, so frames keep flowing without a break.
+    """
+    with av.open(str(clip)) as meta:
+        src = meta.streams.video[0]
+        width = src.codec_context.width
+        height = src.codec_context.height
     while not stop.is_set():
         try:
-            _publish_once(clip, stop)
+            with av.open(
+                RTSP_URL, mode="w", format="rtsp", options={"rtsp_transport": "tcp"}
+            ) as sink:
+                out_stream = sink.add_stream("libx264", rate=15)
+                out_stream.width = width
+                out_stream.height = height
+                out_stream.pix_fmt = "yuv420p"
+                out_stream.gop_size = 15
+                while not stop.is_set():
+                    _publish_pass(clip, out_stream, sink, stop)
         except (av.error.FFmpegError, OSError, ConnectionError, TimeoutError):
             if stop.is_set():
                 return
             time.sleep(1.0)
 
 
-def _publish_once(clip: Path, stop: threading.Event) -> None:
-    """One continuous publish of the clip."""
+def _publish_pass(
+    clip: Path, out_stream: av.Stream, sink: av.OutputContainer, stop: threading.Event
+) -> None:
+    """Stream one full pass of the clip through the shared publish session."""
     with av.open(str(clip)) as source:
         in_stream = source.streams.video[0]
-        with av.open(RTSP_URL, mode="w", format="rtsp", options={"rtsp_transport": "tcp"}) as sink:
-            out_stream = sink.add_stream("libx264", rate=15)
-            out_stream.width = in_stream.codec_context.width
-            out_stream.height = in_stream.codec_context.height
-            out_stream.pix_fmt = "yuv420p"
-            for frame in source.decode(in_stream):
-                if stop.is_set():
-                    return
-                rgb = av.VideoFrame.from_ndarray(frame.to_ndarray(format="rgb24"), format="rgb24")
-                for packet in out_stream.encode(rgb):
-                    sink.mux(packet)
-            for packet in out_stream.encode():
+        for frame in source.decode(in_stream):
+            if stop.is_set():
+                return
+            rgb = av.VideoFrame.from_ndarray(frame.to_ndarray(format="rgb24"), format="rgb24")
+            for packet in out_stream.encode(rgb):
                 sink.mux(packet)
+        for packet in out_stream.encode():
+            sink.mux(packet)
 
 
 def _await_frames(timeout: int) -> None:
@@ -85,7 +102,11 @@ def _await_frames(timeout: int) -> None:
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         try:
-            with av.open(RTSP_URL, options={"rtsp_transport": "tcp"}) as probe:
+            # `timeout` (µs) keeps one dead read from blocking past the deadline:
+            # without it a degraded server hangs the probe forever.
+            with av.open(
+                RTSP_URL, options={"rtsp_transport": "tcp", "timeout": "5000000"}
+            ) as probe:
                 next(probe.decode(probe.streams.video[0]))
             return
         except (av.error.FFmpegError, OSError, StopIteration) as exc:
@@ -97,29 +118,23 @@ def _await_frames(timeout: int) -> None:
 @pytest.fixture(scope="session")
 def mediamtx_url() -> Iterator[str]:
     """Start MediaMTX and a clip publisher once for the whole session."""
-    if not docker_available():
+    exe = _mediamtx_exe()
+    if exe is None:
         pytest.skip(
-            "Docker is not available — RTSP tests need MediaMTX (spec §11.1). "
-            "Start Docker Desktop, then re-run with: pytest -m rtsp"
+            "No MediaMTX binary found — RTSP tests need it (spec §11.1). "
+            "Drop a release into backend/tests/rtsp/.tools/ or put mediamtx on "
+            "PATH (https://github.com/bluenviron/mediamtx/releases), then "
+            "re-run with: pytest -m rtsp"
         )
 
     CONFIG_DIR.mkdir(exist_ok=True)
-    (CONFIG_DIR / "mediamtx.yml").write_text(CONFIG, encoding="utf-8")
+    config = CONFIG_DIR / "mediamtx.yml"
+    config.write_text(CONFIG, encoding="utf-8")
 
-    container = subprocess.Popen(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "-p",
-            f"{RTSP_PORT}:{RTSP_PORT}",
-            "-v",
-            f"{CONFIG_DIR}:/etc/mediamtx:ro",
-            MEDIAMTX_IMAGE,
-        ],
+    server = subprocess.Popen(
+        [exe, str(config)],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
+        stderr=subprocess.DEVNULL,
     )
     stop = threading.Event()
     publisher = threading.Thread(target=_publish, args=(ensure_clip("motion"), stop), daemon=True)
@@ -130,9 +145,9 @@ def mediamtx_url() -> Iterator[str]:
     finally:
         stop.set()
         publisher.join(timeout=10)
-        container.terminate()
+        server.terminate()
         try:
-            container.wait(timeout=15)
+            server.wait(timeout=15)
         except subprocess.TimeoutExpired:
-            container.kill()
-            container.wait(timeout=5)
+            server.kill()
+            server.wait(timeout=5)

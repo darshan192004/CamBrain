@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from app.services.stream.file_source import FileSource
+from app.services.stream.pipeline import CameraConfig, CameraPipeline
 from app.services.stream.source import Frame, FrameSource
 from tests.make_fixtures import FRAME_COUNT
 
@@ -113,12 +114,15 @@ async def test_1080p_input_downscaled() -> None:
     The gate downscales internally to its 640x360 work size; the consumer
     still receives the frame at its native size — no hidden resize of the
     data other stages see.
+
+    The motion gate is injected open so this tests the frame *contract* (a
+    1080p buffer reaches the sink untouched), not motion detection — that is
+    already covered by the pipeline tests. A synthetic source that spins as
+    fast as ``sleep(0)`` allows starves the loop and races the gate's
+    priming cooldown, so the source is paced like a real sub-stream.
     """
     import time
 
-    import numpy as np
-
-    from app.services.stream.pipeline import CameraConfig, CameraPipeline
     from app.services.stream.source import Frame
 
     received: list[Frame] = []
@@ -126,30 +130,36 @@ async def test_1080p_input_downscaled() -> None:
     async def sink(frame: Frame) -> None:
         received.append(frame)
 
-    class LoopSource:
+    class AlwaysOpenGate:
+        def update(self, _frame: Frame) -> bool:
+            return True
+
+        def reset(self) -> None:
+            return None
+
+    class PacedSource:
         async def frames(self) -> AsyncIterator[Frame]:
-            i = 0
+            arr = np.full((1080, 1920, 3), 20, dtype=np.uint8)
+            arr[200:800, 900:1020] = 240
             while True:
-                arr = np.full((1080, 1920, 3), 20, dtype=np.uint8)
-                x = (i * 90) % 1500
-                arr[200:800, x : x + 120] = 240
+                # Native 1080p, paced like a real sub-stream: the pipeline's
+                # 5 Hz sample limiter (0.2 s) decides what reaches the sink.
                 yield Frame(arr, time.monotonic(), 1920, 1080)
-                i += 1
-                # A source must suspend: without this the generator never
-                # yields to the loop and the test's sleep() never fires.
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.05)
 
         async def close(self) -> None:
             return None
 
     pipeline = CameraPipeline(
         CameraConfig("cam", "Cam", "loop://1080p", sample_fps=5.0),
-        LoopSource(),
+        PacedSource(),
         sink,
+        motion=AlwaysOpenGate(),  # type: ignore[arg-type]
     )
     task = asyncio.create_task(pipeline.run())
     try:
-        await asyncio.sleep(1.0)
+        # > one priming cooldown (~0.6 s at 0.05 s/frame) + a 5 Hz sample tick.
+        await asyncio.sleep(1.5)
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)

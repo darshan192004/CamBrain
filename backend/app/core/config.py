@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_CORS_ORIGINS = [
@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
     access_token_ttl_s: int = 43200
     refresh_token_ttl_s: int = 604800
+    # HS256 signing key. Unset -> derived from the DPAPI master key (SECURITY 4.2).
+    jwt_secret: SecretStr | None = None
 
 
 settings = Settings()

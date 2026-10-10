@@ -138,6 +138,16 @@ def get_fernet(key_dir: Path | None = None) -> Fernet:
     return cipher
 
 
+def get_master_key_material(key_dir: Path | None = None) -> bytes:
+    """Return the raw (unsealed) master key bytes for key derivation.
+
+    Callers use this to derive purpose-specific keys (e.g. the JWT HS256
+    secret) rather than reusing the Fernet key directly, so one leaked
+    derived key cannot decrypt secrets at rest.
+    """
+    return _load_raw(ensure_master_key(key_dir))
+
+
 def encrypt(plaintext: str, key_dir: Path | None = None) -> str:
     """Encrypt a secret into URL-safe token text safe for a TEXT column."""
     return get_fernet(key_dir).encrypt(plaintext.encode("utf-8")).decode("ascii")

@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.errors import (
     AuthError as CoreAuthError,
@@ -45,6 +46,19 @@ def install_error_handlers(app: FastAPI) -> None:
     """Register domain-exception handlers producing the error envelope."""
 
     from app.api.auth import AccountLockedError, AuthError, ForbiddenError
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        """Framework-raised errors (404 unknown route, 405) use the same envelope."""
+        code = {
+            401: "UNAUTHENTICATED",
+            403: "FORBIDDEN",
+            404: "NOT_FOUND",
+            405: "METHOD_NOT_ALLOWED",
+            429: "RATE_LIMITED",
+        }.get(exc.status_code, "BAD_REQUEST")
+        message = exc.detail if isinstance(exc.detail, str) else "request failed"
+        return JSONResponse(status_code=exc.status_code, content=_envelope(code, message, request))
 
     @app.exception_handler(AuthError)
     async def _auth(request: Request, exc: AuthError) -> JSONResponse:
@@ -87,3 +101,11 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(CamBrainError)
     async def _domain(request: Request, exc: CamBrainError) -> JSONResponse:
         return JSONResponse(status_code=500, content=_envelope("INTERNAL", str(exc), request))
+
+    @app.exception_handler(Exception)
+    async def _unhandled(request: Request, exc: Exception) -> JSONResponse:  # noqa: ARG001
+        """Last-resort 500: envelope with correlation id, never the traceback."""
+        return JSONResponse(
+            status_code=500,
+            content=_envelope("INTERNAL", "internal server error", request),
+        )

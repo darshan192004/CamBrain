@@ -72,6 +72,10 @@ class ValidationError(CamBrainError):
     """Input failed domain validation, beyond what Pydantic already checked."""
 
 
+class ConflictError(CamBrainError):
+    """The request is valid but conflicts with current state (e.g. last admin)."""
+
+
 def safe_error(message: str) -> str:
     """Scrub credentials from a message before it becomes an exception string.
 

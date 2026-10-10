@@ -9,6 +9,8 @@ from app.api.errors import install_error_handlers
 from app.api.middleware import CorrelationIdMiddleware, CsrfMiddleware
 from app.api.routers.auth import router as auth_router
 from app.api.routers.cameras import router as cameras_router
+from app.api.routers.rois import router as rois_router
+from app.api.routers.rules import router as rules_router
 from app.core.config import settings
 
 API_PREFIX = "/api/v1"
@@ -39,6 +41,8 @@ def create_app() -> FastAPI:
     install_error_handlers(app)
     app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(cameras_router, prefix=API_PREFIX)
+    app.include_router(rois_router, prefix=API_PREFIX)
+    app.include_router(rules_router, prefix=API_PREFIX)
     return app
 
 

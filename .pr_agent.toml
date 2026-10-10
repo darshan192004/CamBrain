@@ -3,12 +3,17 @@
 #
 # This file is read from the repository root on every run, so the model and
 # review rules stay reviewable in code review instead of being buried in the
-# workflow. Secrets never live here: the Gemini API key is injected as
-# GOOGLE_AI_STUDIO.GEMINI_API_KEY in .github/workflows/pr-agent.yml.
+# workflow. Secrets never live here: the provider keys are injected as env
+# vars in .github/workflows/pr-agent.yml.
+#
+# Model chain: Gemini is primary; on quota exhaustion or provider failure
+# PR-Agent falls back through the list in order. OpenRouter's "free" router
+# picks a free-tier model automatically; Groq's free tier carries a high
+# rate limit as the last resort.
 
 [config]
 model = "gemini/gemini-3.8-flash"
-fallback_models = ["gemini/gemini-3.8-flash"]
+fallback_models = ["openrouter/free", "groq/llama-3.3-70b-versatile"]
 
 [github_action_config]
 auto_review = true

@@ -15,7 +15,7 @@ import { clearTokens, getAccessToken, setTokens } from "../api/token.js";
  */
 export const useAuthStore = defineStore("auth", {
   state: () => ({
-    /** @type {{user_id: number, username: string, role: string, site_id: number}|null} */
+    /** @type {{user_id: number, username: string, role: string, site_id: number, site_name: string}|null} */
     user: null,
     hydrated: false,
     _hydration: null,

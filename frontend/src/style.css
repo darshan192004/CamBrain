@@ -67,3 +67,16 @@
 
   --ease-snappy: var(--ease);
 }
+
+/* Design §1: honour reduced motion by collapsing every transition and
+   animation to an imperceptible tick (acceptance of task 4.9). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

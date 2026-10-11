@@ -1,6 +1,6 @@
 <script setup>
-// Root: the shell (sidebar, top bar, status bar) lands in task 4.9 — the
-// router owns the screen itself from 4.8 on.
+// Root: `/login` renders bare, every other route renders inside the
+// AppShell layout (task 4.9) because the router nests them as its children.
 import { RouterView } from "vue-router";
 </script>
 

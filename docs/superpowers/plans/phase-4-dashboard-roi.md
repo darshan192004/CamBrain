@@ -401,7 +401,7 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 
 **Acceptance:**
 - [x] Routes per design §3 (all eight paths registered; placeholder views allowed until their tasks).
-- [ ] Viewer: nav item absent **and** guard rejects (defence in depth, API.md §5). *(guard + RoleGate proven here; the concrete Sidebar item test lands in 4.9)*
+- [x] Viewer: nav item absent **and** guard rejects (defence in depth, API.md §5). *(guard + RoleGate proven in 4.8; the concrete Sidebar item test landed in 4.9 — `shell.spec.js` "omits Users and System for a viewer")*
 
 **Gate:** frontend loop. **Commit:** `feat(frontend): login, session hydration, and route guards`
 
@@ -416,7 +416,7 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - TopBar shows site name from the auth store.
 
 **Acceptance:**
-- [ ] Shell wraps `router-view`; reduced-motion media query disables transitions.
+- [x] Shell wraps `router-view`; reduced-motion media query disables transitions. *(4.9 also extended `GET /auth/me` with `site_name` — `MeResponse` in `backend/app/api/schemas.py`, documented in API.md §Auth — so the TopBar can render the operator's site without a second request.)*
 
 **Gate:** frontend loop. **Commit:** `feat(frontend): app shell with role-aware nav and status polling`
 

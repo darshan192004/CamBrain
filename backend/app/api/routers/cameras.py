@@ -164,6 +164,33 @@ async def test_camera(
     return CameraTestResult(**asdict(outcome))
 
 
+@router.post("/test", response_model=CameraTestResult)
+async def test_draft_camera(
+    body: CameraCreate,
+    _: AdminDep,
+    factory: SourceFactoryDep,
+) -> CameraTestResult:
+    """Probe unsaved credentials (PRD: test connection before saving).
+
+    Builds an in-memory `Camera`-shaped object; nothing is persisted, so the
+    dialog can diagnose a new camera before the user commits to saving it.
+    """
+    from app.core.crypto import encrypt  # noqa: PLC0415 - DPAPI touch only when used
+
+    draft = Camera(
+        rtsp_url=body.rtsp_url,
+        rtsp_username=body.username,
+        rtsp_password_enc=encrypt(body.password).encode() if body.password else None,
+    )
+    try:
+        source = factory(draft)
+    except Exception as exc:  # noqa: BLE001 - a decrypt failure is still diagnostic data
+        outcome = failure_outcome(classify_code(exc, fallback="DECODE_FAILED"), body.rtsp_url)
+    else:
+        outcome = await probe_source(source, url=body.rtsp_url)
+    return CameraTestResult(**asdict(outcome))
+
+
 @router.post("/{camera_id}/snapshot")
 async def snapshot_camera(
     camera_id: int,

@@ -19,6 +19,7 @@ DOCUMENTED_PATHS = {
     ("patch", "/api/v1/cameras/{camera_id}"),
     ("delete", "/api/v1/cameras/{camera_id}"),
     ("post", "/api/v1/cameras/{camera_id}/test"),
+    ("post", "/api/v1/cameras/test"),
     ("post", "/api/v1/cameras/{camera_id}/snapshot"),
     ("get", "/api/v1/cameras/{camera_id}/stream"),
     ("get", "/api/v1/cameras/{camera_id}/rois"),

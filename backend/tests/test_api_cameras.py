@@ -395,3 +395,49 @@ def test_stream_slot_cap_returns_503(
         slots.release("testclient")
     finally:
         client.app.dependency_overrides.pop(get_stream_slots, None)
+
+
+def test_draft_probe_ok_never_persists(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """POST /cameras/test probes unsaved credentials without creating a row
+    (PRD: "test connection before saving")."""
+    clip = Path(str(gate_clip_path))
+    body = {"name": "Draft", "rtsp_url": _URL, "username": "admin", "password": "secret123"}
+    with _override_factory(client, lambda _cam: FileSource(clip, loop=False)):
+        resp = client.post("/api/v1/cameras/test", json=body, headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert data["frame_width"] and data["frame_width"] > 0
+    assert data["message"].startswith("Connected.")
+    assert client.get("/api/v1/cameras", headers=admin_headers).json() == []
+
+
+def test_draft_probe_failure_is_200_with_code(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """A draft probe failure is data with a typed code, never an HTTP error."""
+
+    class _Refused:
+        async def frames(self) -> AsyncIterator[object]:
+            raise ConnectionRefusedError("connection refused")
+            yield  # pragma: no cover
+
+        async def close(self) -> None:
+            return None
+
+    body = {"name": "Draft", "rtsp_url": _URL, "password": "secret123"}
+    with _override_factory(client, lambda _cam: _Refused()):
+        resp = client.post("/api/v1/cameras/test", json=body, headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is False
+    assert data["error_code"] == "HOST_UNREACHABLE"
+    assert "secret123" not in resp.text
+
+
+def test_draft_probe_requires_admin(client: TestClient, viewer_headers: dict[str, str]) -> None:
+    body = {"name": "Draft", "rtsp_url": _URL}
+    resp = client.post("/api/v1/cameras/test", json=body, headers=viewer_headers)
+    assert resp.status_code == 403

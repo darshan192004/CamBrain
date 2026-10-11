@@ -92,6 +92,7 @@
 | `PATCH` | `/api/v1/cameras/{id}` | admin |
 | `DELETE` | `/api/v1/cameras/{id}` | admin |
 | `POST` | `/api/v1/cameras/{id}/test` | admin |
+| `POST` | `/api/v1/cameras/test` | admin |
 | `POST` | `/api/v1/cameras/{id}/snapshot` | any |
 | `GET` | `/api/v1/cameras/{id}/stream` | any |
 
@@ -166,6 +167,10 @@ Opens a short-lived connection, reads up to 10 frames, closes it.
 `error_code` ∈ `AUTH_FAILED` · `CONNECT_TIMEOUT` · `HOST_UNREACHABLE` · `NO_SUCH_STREAM` · `DECODE_FAILED` · `CANCELLED`
 
 > The brief anticipated "easy setup wizard … that tells the user exactly what's wrong." This endpoint is where that lives. **Add-camera is the product's first impression** — it has to fail usefully.
+
+`POST /api/v1/cameras/test`
+
+Identical response shape, but takes a `CameraCreate`-shaped body (`name`, `rtsp_url`, optional `username`/`password`) and **persists nothing**: the dialog can probe a camera that does not exist yet (PRD: "test connection before saving"). Same six `error_code`s, same always-`200` semantics; the draft is never written to the database, and a subsequent `GET /cameras` reflects only saved cameras.
 
 `POST /api/v1/cameras/{id}/snapshot`
 

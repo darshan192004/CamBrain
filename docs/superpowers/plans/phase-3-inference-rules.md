@@ -2508,7 +2508,7 @@ Body: eight cameras need eight rule sets without turning StreamManager into a ru
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `test_pipeline.py`'s top-level import block: `from app.services.alerts.rules import RuleConfig`, `from app.services.alerts.stage import Alert, AlertStage`, `from app.services.inference.types import Detection` (everything else — `asyncio`, `time`, `Path`, `FileSource`, `Frame`, `CameraConfig`, `CameraPipeline` — is already imported).
+Add to `test_pipeline.py`'s top-level import block: `import contextlib`, `from app.services.alerts.rules import RuleConfig`, `from app.services.alerts.stage import Alert, AlertStage`, `from app.services.inference.types import Detection` (everything else — `asyncio`, `time`, `Path`, `FileSource`, `Frame`, `CameraConfig`, `CameraPipeline` — is already imported).
 
 Append:
 
@@ -2523,7 +2523,7 @@ async def test_motion_to_alert_under_2s(clip_path: Path) -> None:
     """
 
     class InstantDetector:
-        async def infer(self, frame: Frame) -> list[Detection]:
+        async def infer(self, _frame: Frame) -> list[Detection]:
             return [Detection(class_name="person", confidence=0.9, bbox=(10, 10, 60, 140))]
 
         async def close(self) -> None:
@@ -2531,10 +2531,12 @@ async def test_motion_to_alert_under_2s(clip_path: Path) -> None:
 
     alerts: list[Alert] = []
     fired_at: list[float] = []
+    fired = asyncio.Event()
 
     async def record(alert: Alert) -> None:
         alerts.append(alert)
         fired_at.append(time.monotonic())
+        fired.set()
 
     stage = AlertStage(
         detector=InstantDetector(),
@@ -2560,14 +2562,11 @@ async def test_motion_to_alert_under_2s(clip_path: Path) -> None:
     )
     started = time.monotonic()
     task = asyncio.create_task(pipeline.run())
-    deadline = started + 3.0
-    while not alerts and time.monotonic() < deadline:
-        await asyncio.sleep(0.01)
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(fired.wait(), timeout=3.0)
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
     assert alerts, "no alert fired from a clip full of motion"
     latency = fired_at[0] - started

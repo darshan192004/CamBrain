@@ -29,3 +29,7 @@ psutil>=6.1.0                   # BSD. RSS, disk usage, CPU. Soak test needs it.
 
 # --- Observability ---
 structlog>=24.4.0               # MIT. Structured logs with a redaction chain.
+
+# --- Time zones ---
+tzdata>=2024.1                 # IANA DB for zoneinfo: Windows ships no system tzdata. Apache-2.0.
+

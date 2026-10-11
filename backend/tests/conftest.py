@@ -26,7 +26,7 @@ from app.api.deps import get_db  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.models import Site, User  # noqa: E402
 from app.main import create_app  # noqa: E402
-from tests.make_fixtures import CLIP_NAMES, ensure_clip  # noqa: E402
+from tests.make_fixtures import CLIP_NAMES, CLIPS_DIR, ensure_clip  # noqa: E402
 from tests.rtsp.conftest import mediamtx_pause, mediamtx_url  # noqa: F401, E402
 
 # Weak Argon2 params keep the suite fast; production uses m=64MB t=3 p=4.
@@ -43,8 +43,17 @@ def _reset_login_tracker() -> Iterator[None]:
 
 @pytest.fixture
 def clip_path() -> Path:
-    """Path to the generated motion clip — the default input for stream tests."""
+    """Path to the generated motion clip �?" the default input for stream tests."""
     return ensure_clip("motion")
+
+
+@pytest.fixture
+def gate_clip_path() -> Path:
+    """The real surveillance clip; skipped visibly when not fetched."""
+    path = CLIPS_DIR / "gate.mp4"
+    if not path.exists():
+        pytest.skip("gate.mp4 missing - run backend/scripts/fetch_models.py")
+    return path
 
 
 @pytest.fixture

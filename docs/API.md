@@ -160,7 +160,7 @@ Opens a short-lived connection, reads up to 10 frames, closes it.
 
 `GET /api/v1/cameras/{id}/stream`
 
-`multipart/x-mixed-replace; boundary=frame`. On stream error, emits a zero-length part so the client re-reads the next header. Rate limited to 4 concurrent streams per session. See [memory.md](memory.md) for why MJPEG and not WebRTC.
+`multipart/x-mixed-replace; boundary=frame`. On stream error, emits a zero-length part so the client re-reads the next header. Rate limited to 12 concurrent streams per client IP; excess connections get `503 NO_CAPACITY` (plan D1 — sized for the 8-tile grid). See [memory.md](memory.md) for why MJPEG and not WebRTC.
 
 ---
 
@@ -489,7 +489,7 @@ Per client IP, fixed window.
 | `POST /auth/login` | 5/min per username, then exponential lockout |
 | `POST /auth/refresh` | 30/min |
 | `POST /cameras/{id}/test` | 10/min — each opens a real RTSP connection |
-| `GET /cameras/{id}/stream` | 4 concurrent per session |
+| `GET /cameras/{id}/stream` | 12 concurrent per client IP |
 | `GET /ws/frames` | 10 fps subscribe rate |
 | Everything else | 120/min |
 

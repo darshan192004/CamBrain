@@ -158,45 +158,38 @@ def encode_jpeg(frame: Frame, *, quality: int = DEFAULT_QUALITY) -> bytes:
 
 Probe reads `frame.width/height` (no encoding); snapshot encodes frame 1; MJPEG encodes every frame it forwards.
 
-### MJPEG (4.3) — semantics
+### MJPEG (4.3) — semantics (as shipped)
 
-`multipart/x-mixed-replace; boundary=frame` — parts `Content-Type: image/jpeg`, `Content-Length`, body = JPEG bytes from `encode_jpeg`. Per API.md: on stream error emit a **zero-length part** (no headers beyond the boundary) so the client re-reads the next header; generator exits when the client disconnects or the source ends. Slot cap (D1): per-client-IP counter, acquire before starting the generator, release in `finally`; full → `503 NO_CAPACITY` envelope.
+`multipart/x-mixed-replace; boundary=frame` — parts `Content-Type: image/jpeg`, `Content-Length`, body = JPEG bytes from `encode_jpeg`. Per API.md: on a source error emit a **zero-length part** (`--frame\r\n\r\n`) so the client re-reads the next header. `mjpeg_parts(source, *, encoder=encode_jpeg)` re-opens `source.frames()` per round (a source's generator dies with its exception; RtspSource never raises anyway — it reconnects internally), gives up after 3 consecutive failed rounds with no frame, and always `close()`s the source, yielding `--frame--\r\n` on clean end. Slot cap (D1): `StreamSlots(per_ip=12)` with `try_acquire/release` per `request.client.host`, exposed via the `get_stream_slots` dependency (tests override with `per_ip=1`); the route acquires **before** the factory, returns the `503 NO_CAPACITY` envelope when full, and releases inside a `_guarded()` wrapper's `finally` — i.e. when the `StreamingResponse` generator finishes, not when the route returns.
 
 ```python
-# backend/app/services/stream/mjpeg.py
-"""Multipart/x-mixed-replace writer for MJPEG (API Cameras /stream)."""
-
-from collections.abc import AsyncIterator
-
-from app.services.stream.source import FrameSource
-
+# backend/app/services/stream/mjpeg.py (shipped core loop)
 BOUNDARY = b"frame"
+_PREFIX = b"--" + BOUNDARY + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
+_EMPTY_PART = b"--" + BOUNDARY + b"\r\n\r\n"
+_CLOSE = b"--" + BOUNDARY + b"--\r\n"
 
-
-def mjpeg_parts(source: FrameSource) -> AsyncIterator[bytes]:
-    """Yield multipart bytes for one camera stream.
-
-    An empty part (just the boundary line) is emitted when the source raises,
-    per API: the client re-reads the next header instead of dying with us.
-    """
-    prefix = b"--" + BOUNDARY + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
-
-    async def frames() -> AsyncIterator[bytes]:
-        it = source.frames()
+async def mjpeg_parts(source, *, encoder=encode_jpeg):
+    failures = 0
+    try:
         while True:
+            round_yielded, ended_cleanly = False, False
             try:
-                frame = await it.__anext__()
-            except StopAsyncIteration:
-                yield b"--" + BOUNDARY + b"--\r\n"
-                return
-            except Exception:  # noqa: BLE001 - one bad frame must not kill the view
-                yield b"--" + BOUNDARY + b"\r\n\r\n"
-                continue
-            jpeg = encode_jpeg(frame)
-            yield prefix + str(len(jpeg)).encode() + b"\r\n\r\n" + jpeg + b"\r\n"
+                async for frame in source.frames():
+                    jpeg = encoder(frame)
+                    round_yielded = True
+                    failures = 0
+                    yield _PREFIX + str(len(jpeg)).encode() + b"\r\n\r\n" + jpeg + b"\r\n"
+                ended_cleanly = True
+            except Exception:  # BLE001 - one bad round must not kill the view
+                failures += 1
+                yield _EMPTY_PART
+            if ended_cleanly or (not round_yielded and failures >= 3):
+                break
+    finally:
+        await source.close()  # contextlib.suppress in shipped code
+    yield _CLOSE
 ```
-
-(Final shape may differ — e.g. wrapping the iterator per request — but the test contract below is fixed.)
 
 ### Tests this plan requires (backend)
 
@@ -205,7 +198,7 @@ def mjpeg_parts(source: FrameSource) -> AsyncIterator[bytes]:
 | `test_api_cameras.py` (edit) | `test_probe_ok_reports_dims_and_fps` (FileSource), `test_probe_transport_failure_is_200_with_code`, `test_probe_stream_error_reason_is_honoured`, `test_probe_unknown_camera_404`, `test_snapshot_returns_jpeg_magic`, `test_snapshot_404_unknown_camera`, `test_stream_sends_multipart_frames`, `test_stream_404_unknown_camera`, `test_stream_slot_cap_returns_503` (cap dependency overridden to 1, slot held) — replaces `test_stream_is_501_until_wired` |
 | `test_api_events.py` (edit) | `test_thumbnail_serves_file`, `test_thumbnail_404_when_absent`, `test_thumbnail_cross_tenant_404` |
 | `test_rois.py` (new) | `test_roi_survives_resolution_change` (verification matrix row) |
-| `test_mjpeg.py` (new) | `test_part_headers_and_jpeg_body`, `test_error_emits_empty_part_then_recovers`, `test_source_end_emits_close_boundary` |
+| `test_mjpeg.py` (new) | `test_part_headers_and_jpeg_body`, `test_error_emits_empty_part_then_recovers`, `test_source_end_emits_close_boundary`, `test_consecutive_failures_give_up` (3 empty parts then close — no tight failure loop) |
 | `test_stream_factory.py` (new) | `test_connect_url_embeds_credentials_encoded`, `test_connect_url_without_username_is_unchanged`, `test_connect_url_username_only_has_no_colon`, `test_connect_url_decrypts_the_stored_token` |
 
 ### Contract amendments to API.md (synced in the task that lands them)
@@ -334,9 +327,9 @@ def mjpeg_parts(source: FrameSource) -> AsyncIterator[bytes]:
 4. API.md rate-limit row: 4 → 12 concurrent per client IP (D1).
 
 **Acceptance:**
-- [ ] Multipart parts parse to intact JPEGs; error recovery per API.md.
-- [ ] Cap returns the standard `503 NO_CAPACITY` envelope, slot released after close.
-- [ ] 501 stub and its test are gone.
+- [x] Multipart parts parse to intact JPEGs; error recovery per API.md.
+- [x] Cap returns the standard `503 NO_CAPACITY` envelope, slot released after close.
+- [x] 501 stub and its test are gone.
 
 **Checkpoint A:** backend contract (4.1–4.3) green, API.md synced. **Commit:** `feat(api): mjpeg live stream with a bounded per-ip slot cap`
 

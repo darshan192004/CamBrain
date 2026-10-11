@@ -8,11 +8,12 @@ and a masked placeholder instead.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import asdict
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import ClaimsDep, DbSessionDep, require_role_dep
 from app.api.schemas import CameraCreate, CameraOut, CameraPatch, CameraTestResult
@@ -22,6 +23,7 @@ from app.db.models.camera import Camera
 from app.db.repositories.cameras import CameraRepository
 from app.services.stream.factory import SourceFactory, get_source_factory
 from app.services.stream.jpeg import encode_jpeg
+from app.services.stream.mjpeg import StreamSlots, get_stream_slots, mjpeg_parts
 from app.services.stream.probe import capture_frame, classify_code, failure_outcome, probe_source
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
@@ -31,6 +33,22 @@ _MASK = "••••••••"
 # request body — so a viewer's malformed write is a 403, not a 422.
 AdminDep = Annotated[dict[str, Any], Depends(require_role_dep("admin"))]
 SourceFactoryDep = Annotated[SourceFactory, Depends(get_source_factory)]
+StreamSlotsDep = Annotated[StreamSlots, Depends(get_stream_slots)]
+
+
+def _error_response(request: Request, status_code: int, code: str, message: str) -> JSONResponse:
+    """Build the standard error envelope for a route-level outcome."""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "field": None,
+                "correlation_id": getattr(request.state, "correlation_id", "unknown"),
+            }
+        },
+    )
 
 
 def _repo(db: Any, claims: dict[str, Any]) -> CameraRepository:
@@ -177,23 +195,45 @@ async def snapshot_camera(
 
 
 @router.get("/{camera_id}/stream")
-async def stream_camera(camera_id: int, claims: ClaimsDep, db: DbSessionDep) -> Response:
-    """MJPEG live stream. Phase 5 wires real frames; until then 501.
+async def stream_camera(
+    camera_id: int,
+    claims: ClaimsDep,
+    db: DbSessionDep,
+    request: Request,
+    factory: SourceFactoryDep,
+    slots: StreamSlotsDep,
+) -> Response:
+    """MJPEG live stream: multipart/x-mixed-replace with a per-IP slot cap (D1).
 
-    Returning a 501 (not a placeholder JPEG) keeps the stub from being
-    mistaken for a working stream in the dashboard.
+    The slot is released when the streaming generator finishes (including a
+    client disconnect), never when this route returns.
     """
     camera = _repo(db, claims).get(camera_id)
     if camera is None:
         raise NotFoundError("camera not found")
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content={
-            "error": {
-                "code": "NOT_IMPLEMENTED",
-                "message": "stream endpoint is not wired yet (Phase 5)",
-                "field": None,
-                "correlation_id": "not-wired",
-            }
-        },
+    ip = request.client.host if request.client else "unknown"
+    if not slots.try_acquire(ip):
+        return _error_response(
+            request,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "NO_CAPACITY",
+            f"Too many concurrent streams for this client (limit {slots.per_ip}).",
+        )
+    try:
+        source = factory(camera)
+    except Exception as exc:  # noqa: BLE001 - surfaced as the standard envelope
+        slots.release(ip)
+        outcome = failure_outcome(classify_code(exc, fallback="CONNECT_TIMEOUT"), camera.rtsp_url)
+        raise StreamError(outcome.message) from exc
+
+    async def _guarded() -> AsyncIterator[bytes]:
+        try:
+            async for part in mjpeg_parts(source):
+                yield part
+        finally:
+            slots.release(ip)
+
+    return StreamingResponse(
+        _guarded(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
     )

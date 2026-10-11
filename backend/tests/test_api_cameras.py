@@ -345,7 +345,53 @@ def test_snapshot_source_failure_is_error_envelope(
     assert "secret123" not in resp.text
 
 
-def test_stream_is_501_until_wired(client: TestClient, admin_headers: dict[str, str]) -> None:
+def test_stream_sends_multipart_frames(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """The stream is multipart JPEG parts, ending with the close boundary."""
     created = _create(client, admin_headers)
-    resp = client.get(f"/api/v1/cameras/{created['id']}/stream", headers=admin_headers)
-    assert resp.status_code == 501
+    with _override_factory(client, lambda _cam: FileSource(Path(str(gate_clip_path)), loop=False)):
+        resp = client.get(f"/api/v1/cameras/{created['id']}/stream", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("multipart/x-mixed-replace; boundary=frame")
+    body = resp.content
+    jpeg_parts = [p for p in body.split(b"--frame\r\n") if b"Content-Length" in p]
+    assert len(jpeg_parts) >= 2
+    assert b"secret123" not in body
+    assert body.endswith(b"--frame--\r\n")
+
+
+def test_stream_404_unknown_camera(client: TestClient, admin_headers: dict[str, str]) -> None:
+    resp = client.get("/api/v1/cameras/999999/stream", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_stream_slot_cap_returns_503(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """D1: cap 12 concurrent per client IP; a full slot is 503 NO_CAPACITY."""
+    from app.services.stream.mjpeg import StreamSlots, get_stream_slots
+
+    slots = StreamSlots(per_ip=1)
+    client.app.dependency_overrides[get_stream_slots] = lambda: slots
+    try:
+        assert slots.try_acquire("testclient")  # hold the only slot
+        resp = client.get(
+            f"/api/v1/cameras/{_create(client, admin_headers)['id']}/stream", headers=admin_headers
+        )
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "NO_CAPACITY"
+
+        slots.release("testclient")
+        created = _create(client, admin_headers)
+        with _override_factory(
+            client, lambda _cam: FileSource(Path(str(gate_clip_path)), loop=False)
+        ):
+            resp = client.get(f"/api/v1/cameras/{created['id']}/stream", headers=admin_headers)
+        assert resp.status_code == 200
+        # The slot is released when the stream generator finishes.
+        assert slots.try_acquire("testclient")
+        slots.release("testclient")
+    finally:
+        client.app.dependency_overrides.pop(get_stream_slots, None)

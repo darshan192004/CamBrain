@@ -352,8 +352,8 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 **Steps:** failing test `test_roi_survives_resolution_change`: create a camera (640×360) + ROI with normalised points; simulate a sub-stream switch by updating `frame_width/height` **through the repository** (`CameraPatch` deliberately excludes these pipeline-written fields); assert the stored `points` are byte-identical, `coverage_pct` unchanged, and a physical point at the same relative position still evaluates `in_roi` the same through `rules.evaluate` at both frame sizes (centroid computed from each size's pixels).
 
 **Acceptance:**
-- [ ] Verification-matrix row exists and passes (spec §12: Phase 4).
-- [ ] Test fails only if normalisation regressions are introduced (mutation check: temporarily denormalise → red).
+- [x] Verification-matrix row exists and passes (spec §12: Phase 4).
+- [x] Test fails only if normalisation regressions are introduced (mutation check: temporarily denormalise → red).
 
 **Gate:** backend loop. **Commit:** `test(rois): normalised zones survive a resolution change`
 

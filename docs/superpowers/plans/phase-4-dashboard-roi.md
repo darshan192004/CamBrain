@@ -367,8 +367,8 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 3. CI frontend job: add `npm run test` step after lint (before build).
 
 **Acceptance:**
-- [ ] `npm test` green locally and in CI; no hardcoded hex added.
-- [ ] `npm run build` still green.
+- [x] `npm test` green locally and in CI; no hardcoded hex added.
+- [x] `npm run build` still green.
 
 **Gate:** frontend loop. **Commit:** `chore(frontend): design tokens and vitest wired into the gate`
 

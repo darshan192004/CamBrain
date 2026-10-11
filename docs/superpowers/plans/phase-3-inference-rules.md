@@ -1386,7 +1386,7 @@ def test_track_expires_after_max_misses() -> None:
     tr.update([det(0, 0, 20, 20)], frame_width=100, frame_height=100)
     assert tr.update([], frame_width=100, frame_height=100) == []
     assert tr.update([], frame_width=100, frame_height=100) == []
-    # Third miss exceeds max_misses=2 -> new sighting is a NEW id.
+    # Two misses reach max_misses=2 -> track is gone; the sighting gets a NEW id.
     tracks = tr.update([det(0, 0, 20, 20)], frame_width=100, frame_height=100)
     assert tracks[0].track_id == 2
 
@@ -1485,7 +1485,7 @@ class Tracker:
                 matched_tracks.append(track)
             else:
                 track.misses += 1
-        self._tracks = [t for t in self._tracks if t.misses <= self._max_misses]
+        self._tracks = [t for t in self._tracks if t.misses < self._max_misses]
         for candidate in unmatched:
             track = _Track(
                 track_id=self._next_id,

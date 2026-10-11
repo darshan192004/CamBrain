@@ -1,5 +1,6 @@
 """Inference layer: Detector protocol, YOLOX decode, tiers, tracker (spec A5.2, A10.4)."""
 
+from app.services.inference.tracker import TrackedObject, Tracker
 from app.services.inference.types import COCO_CLASSES, Detection, Detector, LetterboxMeta
 
 __all__ = [
@@ -7,4 +8,6 @@ __all__ = [
     "Detection",
     "Detector",
     "LetterboxMeta",
+    "TrackedObject",
+    "Tracker",
 ]

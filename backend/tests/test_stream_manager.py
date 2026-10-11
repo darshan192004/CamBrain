@@ -71,6 +71,34 @@ def test_add_remove_status_all(clip_path: Path) -> None:
     assert manager.status_all() == {}
 
 
+def test_per_camera_sink_overrides_the_default(clip_path: Path) -> None:
+    """Phase 3 attaches one AlertStage per camera without eroding the seam."""
+    default_hits = threading.Event()
+    special_hits = threading.Event()
+
+    def make_source(_config: CameraConfig) -> FrameSource:
+        return FileSource(clip_path, loop=True)
+
+    async def default_sink(_frame: Frame) -> None:
+        default_hits.set()
+
+    async def special_sink(_frame: Frame) -> None:
+        special_hits.set()
+
+    manager = StreamManager(make_source, default_sink)
+    try:
+        manager.add_camera(CameraConfig("a", "A", "file://one.mp4", sample_fps=5.0))
+        manager.add_camera(
+            CameraConfig("b", "B", "file://two.mp4", sample_fps=5.0), sink=special_sink
+        )
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and not special_hits.is_set():
+            time.sleep(0.05)
+        assert special_hits.is_set(), "the override sink must receive frames"
+    finally:
+        manager.stop()
+
+
 @pytest.mark.rtsp
 async def test_transient_drop_recovers_fast(mediamtx_pause) -> None:
     """Transient RTSP drop recovers within 5s (spec §1.5, §12)."""

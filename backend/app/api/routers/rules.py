@@ -13,12 +13,22 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Response, status
 
 from app.api.deps import ClaimsDep, DbSessionDep, require_role_dep
-from app.api.schemas import RuleCreate, RuleOut, RulePatch
+from app.api.schemas import (
+    RuleCheckOut,
+    RuleCreate,
+    RuleOut,
+    RulePatch,
+    RuleTestOut,
+    RuleTestRequest,
+)
 from app.core.errors import NotFoundError, ValidationError
 from app.db.models.rule import Rule
 from app.db.repositories.cameras import CameraRepository
+from app.db.repositories.events import EventRepository
 from app.db.repositories.rois import RoiRepository
 from app.db.repositories.rules import RuleRepository
+from app.services.alerts.replay import replay, rule_config
+from app.services.alerts.rules import RulesEngine
 
 router = APIRouter(tags=["rules"])
 
@@ -135,12 +145,46 @@ def delete_rule(rule_id: int, claims: AdminDep, db: DbSessionDep) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/rules/{rule_id}/test", response_model=RuleOut)
-async def test_rule(rule_id: int, claims: AdminDep, db: DbSessionDep) -> RuleOut:
-    """Replay a still through the rules engine. Phase 3 wires the engine."""
+@router.post("/rules/{rule_id}/test", response_model=RuleTestOut)
+async def test_rule(
+    rule_id: int,
+    claims: AdminDep,
+    db: DbSessionDep,
+    body: RuleTestRequest | None = None,
+) -> RuleTestOut:
+    """Replay detections through the engine and return every condition."""
     rule = _repo(db, claims).get(rule_id)
     if rule is None:
         raise NotFoundError("rule not found")
-    # Phase 3 wires the real replay; returning the rule keeps the route
-    # contract live without pretending a diagnostic ran.
-    return _to_out(rule)
+    events = EventRepository(db, site_id=int(claims["site_id"]))
+    event_id = body.event_id if body else None
+    if event_id is not None:
+        event = events.get(event_id)
+        if event is None or event.camera_id != rule.camera_id:
+            raise NotFoundError("event not found")
+    else:
+        found, _total = events.list(camera_id=rule.camera_id, limit=1)
+        if not found:
+            raise NotFoundError("no event to replay yet")
+        event = found[0]
+    camera = CameraRepository(db, site_id=int(claims["site_id"])).get(rule.camera_id)
+    if camera is None:
+        raise NotFoundError("camera not found")
+    roi = (
+        RoiRepository(db, site_id=int(claims["site_id"])).get(rule.roi_id) if rule.roi_id else None
+    )
+    outcome = replay(
+        RulesEngine(),
+        rule_config(rule, roi),
+        camera,
+        events.detections(event.id),
+        event,
+    )
+    return RuleTestOut(
+        rule_id=rule.id,
+        fired=outcome.fired,
+        checks=[
+            RuleCheckOut(condition=c.condition, passed=c.passed, detail=c.detail)
+            for c in outcome.checks
+        ],
+    )

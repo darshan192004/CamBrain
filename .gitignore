@@ -2,6 +2,8 @@
 models/*.onnx
 models/*.bin
 models/*.pt
+# Atomic-download scratch from scripts/fetch_models.py
+*.part
 
 # --- Runtime data ---
 *.db

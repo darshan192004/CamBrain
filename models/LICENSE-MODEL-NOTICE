@@ -1,0 +1,20 @@
+CamBrain model asset notice
+===========================
+
+Weights are gitignored and fetched by backend/scripts/fetch_models.py.
+Every entry below is pinned by SHA-256 in models/manifest.json.
+
+yolox_s.onnx, yolox_nano.onnx, yolox_m.onnx
+  Source:   https://github.com/Megvii-BaseDetection/YOLOX (release 0.1.1rc0)
+  Licence:  Apache License 2.0
+  Copyright (c) Megvii Imaging
+  Note:     Apache-2.0 requires attribution; keep this file with any build
+            that ships these weights. ultralytics exports are prohibited.
+
+gate.mp4 (test asset, person-bicycle-car-detection.mp4)
+  Source:   https://github.com/intel-iot-devkit/sample-videos
+  Licence:  CC-BY-4.0
+  Copyright (c) Intel Corporation
+  Use:      Phase 3 gate only; never shipped to customers.
+
+No model in this repository is AGPL, GPL, or network-copyleft in any form.

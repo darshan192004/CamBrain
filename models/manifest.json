@@ -1,0 +1,36 @@
+{
+  "assets": [
+    {
+      "name": "yolox_s.onnx",
+      "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.onnx",
+      "sha256": "c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063",
+      "dest": "models/yolox_s.onnx",
+      "licence": "Apache-2.0",
+      "source": "Megvii-BaseDetection/YOLOX release 0.1.1rc0"
+    },
+    {
+      "name": "yolox_nano.onnx",
+      "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx",
+      "sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
+      "dest": "models/yolox_nano.onnx",
+      "licence": "Apache-2.0",
+      "source": "Megvii-BaseDetection/YOLOX release 0.1.1rc0"
+    },
+    {
+      "name": "yolox_m.onnx",
+      "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_m.onnx",
+      "sha256": "21ff6cfdeb53b013bac2249599e55f00bff3cfdfdab37ed7a4620818c1d15b3f",
+      "dest": "models/yolox_m.onnx",
+      "licence": "Apache-2.0",
+      "source": "Megvii-BaseDetection/YOLOX release 0.1.1rc0"
+    },
+    {
+      "name": "gate.mp4",
+      "url": "https://github.com/intel-iot-devkit/sample-videos/raw/master/person-bicycle-car-detection.mp4",
+      "sha256": "452b11b7e0efbd019f1d9570d0c790e90416ad4ad29eec6003872d08443140ef",
+      "dest": "backend/tests/fixtures/clips/gate.mp4",
+      "licence": "CC-BY-4.0",
+      "source": "intel-iot-devkit/sample-videos (archived, CC-BY-4.0)"
+    }
+  ]
+}

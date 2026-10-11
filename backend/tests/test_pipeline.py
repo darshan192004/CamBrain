@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -12,6 +13,9 @@ import psutil
 import pytest
 
 from app.core.errors import ValidationError
+from app.services.alerts.rules import RuleConfig
+from app.services.alerts.stage import Alert, AlertStage
+from app.services.inference.types import Detection
 from app.services.stream.file_source import FileSource
 from app.services.stream.pipeline import CameraConfig, CameraPipeline, FrameSink
 from app.services.stream.source import Frame
@@ -158,3 +162,63 @@ async def test_pipeline_closes_source_on_cancel(clip_path: Path) -> None:
     )
     await _run_for(pipeline, 0.5)
     assert source.closed
+
+
+async def test_motion_to_alert_under_2s(clip_path: Path) -> None:
+    """Motion clip -> gate -> sample -> detect -> rules -> alert, under 2s.
+
+    The plumbing leg of the spec 11 latency row: a scripted detector stands
+    in for inference (its cost is proven separately by the slow real-clip
+    gate), so this measures motion gate + sampling + stage + engine as one
+    number that runs in the default suite.
+    """
+
+    class InstantDetector:
+        async def infer(self, _frame: Frame) -> list[Detection]:
+            return [Detection(class_name="person", confidence=0.9, bbox=(10, 10, 60, 140))]
+
+        async def close(self) -> None:
+            return None
+
+    alerts: list[Alert] = []
+    fired_at: list[float] = []
+    fired = asyncio.Event()
+
+    async def record(alert: Alert) -> None:
+        alerts.append(alert)
+        fired_at.append(time.monotonic())
+        fired.set()
+
+    stage = AlertStage(
+        detector=InstantDetector(),
+        rules=[
+            RuleConfig(
+                rule_id=1,
+                name="anything",
+                severity="warning",
+                classes=("person",),
+                confidence_threshold=0.55,
+                cooldown_seconds=0,
+                active_hours=None,
+                roi=None,
+                last_fired_at=None,
+            )
+        ],
+        on_alert=record,
+    )
+    pipeline = CameraPipeline(
+        CameraConfig("cam", "Cam", str(clip_path), sample_fps=5.0),
+        FileSource(clip_path),
+        stage,
+    )
+    started = time.monotonic()
+    task = asyncio.create_task(pipeline.run())
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(fired.wait(), timeout=3.0)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert alerts, "no alert fired from a clip full of motion"
+    latency = fired_at[0] - started
+    assert latency < 2.0, f"first alert took {latency:.2f}s (budget 2s)"

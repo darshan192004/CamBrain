@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.db.models import Rule, Site
+from app.db.models import Camera, Event, EventDetection, Rule, Site
 
 _URL = "rtsp://10.0.0.5:554/Streaming/Channels/101"
 
@@ -232,11 +232,167 @@ def test_cross_tenant_returns_404(
     assert client.get(f"/api/v1/rules/{rid}", headers=admin_headers).status_code == 404
 
 
-def test_test_endpoint_returns_rule(client: TestClient, admin_headers: dict[str, str]) -> None:
-    """POST /rules/{id}/test returns the rule (engine wired in Phase 3)."""
+def _seed_detection_event(
+    db: Session, site_id: int, camera_id: int, *, confidence: float = 0.71
+) -> Event:
+    """Event + one person detection at a known pixel bbox (no create API until Phase 4)."""
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).replace(tzinfo=None)  # naive UTC, as _seed_event does
+    event = Event(
+        site_id=site_id,
+        camera_id=camera_id,
+        triggered_by="rule",
+        started_at=now,
+        severity="critical",
+        summary="1 person in Loading dock",
+    )
+    db.add(event)
+    db.flush()
+    db.add(
+        EventDetection(
+            event_id=event.id,
+            camera_id=camera_id,
+            class_name="person",
+            confidence=confidence,
+            bbox=[100, 200, 300, 400],
+            track_id=1,
+            detected_at=now,
+        )
+    )
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+def _set_frame_size(db: Session, camera_id: int) -> None:
+    """Pixel bboxes need a frame size before they can be normalised."""
+    camera = db.get(Camera, camera_id)
+    assert camera is not None
+    camera.frame_width, camera.frame_height = 768, 432
+    db.commit()
+
+
+def test_rule_test_returns_api_shaped_checks(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    """API.md's documented response, down to the condition order."""
+    site, _admin, _viewer = seeded
     cid = _make_camera(client, admin_headers)
     rule = _create_rule(client, admin_headers, cid)
-    rid = rule["id"]
-    resp = client.post(f"/api/v1/rules/{rid}/test", headers=admin_headers)
-    assert resp.status_code == 200
-    assert resp.json()["id"] == rid
+    _set_frame_size(db_session, cid)
+    _seed_detection_event(db_session, site.id, cid)
+
+    resp = client.post(f"/api/v1/rules/{rule['id']}/test", json={}, headers=admin_headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["rule_id"] == rule["id"]
+    assert body["fired"] is True
+    assert [c["condition"] for c in body["checks"]] == [
+        "class_in_allowlist",
+        "confidence",
+        "in_roi",
+        "active_hours",
+        "cooldown",
+    ]
+    assert all(isinstance(c["passed"], bool) and c["detail"] for c in body["checks"])
+    # person 0.71 >= 0.55, no ROI -> whole frame, no hours, no cooldown history.
+    roi_check = next(c for c in body["checks"] if c["condition"] == "in_roi")
+    assert "whole frame" in roi_check["detail"]
+
+
+def test_rule_test_replays_a_supplied_event_id(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    rule = _create_rule(client, admin_headers, cid)
+    _set_frame_size(db_session, cid)
+    event = _seed_detection_event(db_session, site.id, cid)
+
+    resp = client.post(
+        f"/api/v1/rules/{rule['id']}/test",
+        json={"event_id": event.id},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["fired"] is True
+
+
+def test_rule_test_unknown_event_id_is_404(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    cid = _make_camera(client, admin_headers)
+    rule = _create_rule(client, admin_headers, cid)
+    resp = client.post(
+        f"/api/v1/rules/{rule['id']}/test", json={"event_id": 999999}, headers=admin_headers
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_rule_test_event_on_another_camera_is_404(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    """A replayed event must belong to the rule's own camera."""
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    other_cid = _make_camera(client, admin_headers)
+    rule = _create_rule(client, admin_headers, cid)
+    event = _seed_detection_event(db_session, site.id, other_cid)
+
+    resp = client.post(
+        f"/api/v1/rules/{rule['id']}/test",
+        json={"event_id": event.id},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 404
+
+
+def test_rule_test_404s_with_no_event_to_replay(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    cid = _make_camera(client, admin_headers)
+    rule = _create_rule(client, admin_headers, cid)
+    resp = client.post(f"/api/v1/rules/{rule['id']}/test", json={}, headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_rule_test_422_when_frame_size_unknown(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    """No frame size means no ROI interpretation — a loud 422, not a pass."""
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    rule = _create_rule(client, admin_headers, cid)
+    _seed_detection_event(db_session, site.id, cid)  # camera dims intentionally NULL
+
+    resp = client.post(f"/api/v1/rules/{rule['id']}/test", json={}, headers=admin_headers)
+    assert resp.status_code == 422
+    body = resp.json()["error"]
+    assert body["code"] == "VALIDATION_ERROR"
+    assert "frame size" in body["message"]
+
+
+def test_rule_test_cross_tenant_event_is_404(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    rule = _create_rule(client, admin_headers, cid)
+    _set_frame_size(db_session, cid)
+    event = _seed_detection_event(db_session, site.id, cid)
+    other = Site(name="Other", timezone="UTC")
+    db_session.add(other)
+    db_session.flush()
+    event.site_id = other.id
+    db_session.commit()
+    db_session.expire_all()
+
+    resp = client.post(
+        f"/api/v1/rules/{rule['id']}/test",
+        json={"event_id": event.id},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 404

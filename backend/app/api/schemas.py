@@ -365,6 +365,28 @@ class RuleOut(BaseModel):
     created_at: datetime
 
 
+class RuleCheckOut(BaseModel):
+    """One condition verdict (API.md POST /rules/{id}/test)."""
+
+    condition: str
+    passed: bool
+    detail: str
+
+
+class RuleTestOut(BaseModel):
+    """Diagnostic replay response (API.md, spec A7.3)."""
+
+    rule_id: int
+    fired: bool
+    checks: list[RuleCheckOut]
+
+
+class RuleTestRequest(BaseModel):
+    """Optional event selection; omit for the camera's most recent event."""
+
+    event_id: int | None = None
+
+
 class EventDetectionOut(BaseModel):
     """One detection row inside an event."""
 

@@ -56,14 +56,23 @@ class StreamManager:
         self._workers: dict[str, _CameraWorker] = {}
         self._lock = threading.Lock()
 
-    def add_camera(self, config: CameraConfig) -> None:
-        """Start a pipeline for ``config`` on a fresh thread+loop."""
+    def add_camera(self, config: CameraConfig, *, sink: FrameSink | None = None) -> None:
+        """Start a pipeline for ``config`` on a fresh thread+loop.
+
+        Args:
+            config: Camera settings for the new pipeline.
+            sink: Per-camera override; falls back to the manager-wide sink.
+                Phase 3 passes one AlertStage per camera through this slot.
+
+        Raises:
+            ValueError: If the camera is already running.
+        """
         with self._lock:
             if config.camera_id in self._workers:
                 raise ValueError(f"camera {config.camera_id} is already running")
             worker = _CameraWorker(config.camera_id)
             source = self._factory(config)
-            worker.pipeline = CameraPipeline(config, source, self._sink)
+            worker.pipeline = CameraPipeline(config, source, sink or self._sink)
             worker.thread.start()
             worker.future = asyncio.run_coroutine_threadsafe(worker.pipeline.run(), worker.loop)
             worker.future.add_done_callback(

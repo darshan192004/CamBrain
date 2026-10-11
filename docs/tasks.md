@@ -108,20 +108,20 @@ Phases are sequenced so that **each phase ends with something demonstrable**. No
 ### Detector
 
 - [ ] **Benchmark YOLOX-s vs RT-DETR-r18** on real footage — this is the deferred decision, see [memory.md](memory.md)
-- [ ] `inference/tiers.py` — capability detection (AVX2/VNNI/core count)
-- [ ] `inference/detector.py` — protocol, ONNX wrapper, `io_binding`, preallocated buffers
-- [ ] `inference/pool.py` — bounded threadpool, one session per tier
-- [ ] `inference/yolox_post.py` — anchor-free decode, letterbox inverse, NMS
-- [ ] `models/` fetch script + `LICENSE-MODEL-NOTICE` + licence inventory
-- [ ] `inference/detector.py` — model output validation, typed `InferenceError`
+- [x] `inference/tiers.py` — capability detection (AVX2/VNNI/core count)
+- [x] `inference/detector.py` — protocol, ONNX wrapper, preallocated buffers (`io_binding` deferred — plan deviation D4)
+- [x] `inference/pool.py` — bounded threadpool, one session per tier
+- [x] `inference/yolox_post.py` — anchor-free decode, letterbox inverse, NMS (grid derives from the letterboxed input size, so 416 and 640 both work)
+- [x] `models/` fetch script + `LICENSE-MODEL-NOTICE` + licence inventory
+- [x] `inference/detector.py` — model output validation, typed `InferenceError`
 
 ### ROI + rules
 
-- [ ] `alerts/roi.py` — point-in-polygon, centroid rule, bounding-box overlap
-- [ ] `tracker/tracker.py` — detached IoU tracker (own implementation, no BYTETracker copy)
-- [ ] `alerts/rules.py` — pure `evaluate()`, class list, confidence, ROI, active hours, cooldown, dedupe key
-- [ ] Table-driven rule tests — highest-value test surface in the codebase
-- [ ] Timezone handling verified against a non-UTC zone
+- [x] `alerts/roi.py` — point-in-polygon, centroid rule, bounding-box overlap
+- [x] `inference/tracker.py` — detached IoU tracker (own implementation, no BYTETracker copy)
+- [x] `alerts/rules.py` — pure `evaluate()`, class list, confidence, ROI, active hours, cooldown, dedupe key
+- [x] Table-driven rule tests — highest-value test surface in the codebase
+- [x] Timezone handling verified against a non-UTC zone (`Asia/Kolkata`, DST-free)
 
 ---
 

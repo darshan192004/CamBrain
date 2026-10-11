@@ -1154,6 +1154,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from app.services.inference import tiers
 
 
@@ -1178,7 +1180,7 @@ def test_no_avx2_is_low() -> None:
     assert tiers.tier_for(tiers.Capabilities(cores=16, avx2=False, vnni=False)) == "low"
 
 
-def test_tier_falls_back_on_low_capability(monkeypatch) -> None:
+def test_tier_falls_back_on_low_capability(monkeypatch: pytest.MonkeyPatch) -> None:
     """Probe failure must degrade to the floor, never crash startup (A12)."""
     def explode() -> bool:
         raise OSError("cpuinfo unavailable")
@@ -1200,6 +1202,14 @@ def test_probe_on_this_machine_is_sane() -> None:
     caps = tiers.probe_capabilities()
     assert caps.cores >= 1
     assert tiers.tier_for(caps) in {"high", "medium", "low"}
+
+
+def test_resolve_tier_points_at_the_repo_models_dir() -> None:
+    tier, path, size = tiers.resolve_tier(tiers.Capabilities(cores=2, avx2=True, vnni=True))
+    assert tier == "low"
+    assert path == tiers.MODELS_DIR / "yolox_nano.onnx"
+    assert tiers.MODELS_DIR.is_dir(), "models/ lives at the repo root, not backend/models/"
+    assert size == 416
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1229,7 +1239,7 @@ import platform
 from dataclasses import dataclass
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 MODELS_DIR = REPO_ROOT / "models"
 
 # winnt.h processor-feature constants. An unknown constant returns 0 (False),
@@ -1258,14 +1268,15 @@ TIER_SPECS: dict[str, tuple[str, int]] = {
 def _read_feature_bits() -> tuple[bool, bool]:
     """Return (avx2, vnni_proxy) for this CPU; platform-specific."""
     if platform.system() == "Windows":
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        # getattr: typeshed only defines ctypes.windll on win32.
+        kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009
         avx2 = bool(kernel32.IsProcessorFeaturePresent(_PF_AVX2))
         # VNNI has no stable PF constant on every SDK; AVX512F is a safe
         # proxy that can only UNDER-report (N100 -> False -> low, correct).
         vnni = bool(kernel32.IsProcessorFeaturePresent(_PF_AVX512F))
         return avx2, vnni
     flags: set[str] = set()
-    with open("/proc/cpuinfo", encoding="utf-8") as fh:
+    with Path("/proc/cpuinfo").open(encoding="utf-8") as fh:
         for line in fh:
             if line.startswith("flags"):
                 flags = set(line.split(":", 1)[1].split())
@@ -1304,7 +1315,7 @@ def resolve_tier(caps: Capabilities | None = None) -> tuple[str, Path, int]:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `pytest backend/tests/test_tiers.py -v`
-Expected: 8 passed
+Expected: 9 passed
 
 - [ ] **Step 5: Static checks + commit**
 

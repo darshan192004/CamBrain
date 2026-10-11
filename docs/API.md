@@ -67,6 +67,19 @@
 
 **`POST /api/v1/auth/refresh`** rotates the refresh token and returns a new pair. Presenting an already-rotated token revokes the entire family — that is how token theft is detected.
 
+**`GET /api/v1/auth/me`** — the dashboard's boot payload (session hydration on reload).
+
+```json
+// Response 200
+{
+  "user_id": 1,
+  "username": "ramesh",
+  "role": "admin",
+  "site_id": 1,
+  "site_name": "Dhanraj Complex"
+}
+```
+
 ---
 
 ### Cameras

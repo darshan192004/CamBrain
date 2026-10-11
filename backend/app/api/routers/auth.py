@@ -24,6 +24,7 @@ from app.api.schemas import (
     RefreshRequest,
     TokenResponse,
 )
+from app.db.models.site import Site
 from app.db.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -77,11 +78,19 @@ def logout(request: Request, db: DbSessionDep) -> OkResponse:
 
 @router.get("/me", response_model=MeResponse)
 def me(claims: ClaimsDep, db: DbSessionDep) -> MeResponse:
-    """Return the caller's identity, role, and site."""
+    """Return the caller's identity, role, and site (name included for the top bar)."""
     user = db.get(User, int(claims["sub"]))
     if user is None:
         raise AuthError("unknown user")
-    return MeResponse(user_id=user.id, username=user.username, role=user.role, site_id=user.site_id)
+    site = db.get(Site, user.site_id)
+    site_name = site.name if site is not None else ""
+    return MeResponse(
+        user_id=user.id,
+        username=user.username,
+        role=user.role,
+        site_id=user.site_id,
+        site_name=site_name,
+    )
 
 
 @router.post("/change-password", response_model=OkResponse)

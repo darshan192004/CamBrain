@@ -38,12 +38,13 @@ class TokenResponse(BaseModel):
 
 
 class MeResponse(BaseModel):
-    """GET /auth/me: the caller's identity and tenancy."""
+    """GET /auth/me: the caller's identity and tenancy (site_name feeds the top bar)."""
 
     user_id: int
     username: str
     role: str
     site_id: int
+    site_name: str
 
 
 class OkResponse(BaseModel):

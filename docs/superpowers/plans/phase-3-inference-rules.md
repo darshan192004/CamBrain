@@ -887,6 +887,7 @@ def _explode() -> None:
 `backend/tests/test_detector.py`:
 
 ```python
+"""Letterbox geometry, loud failures, and a real-model smoke test."""
 
 from __future__ import annotations
 
@@ -897,7 +898,6 @@ import pytest
 
 from app.core.errors import InferenceError
 from app.services.inference.detector import OnnxYoloXDetector, letterbox, open_detector
-from app.services.inference.types import COCO_CLASSES
 from app.services.stream.source import Frame
 
 MODELS = Path(__file__).resolve().parents[2] / "models"
@@ -918,15 +918,15 @@ def test_letterbox_pads_to_square() -> None:
     assert (meta.frame_width, meta.frame_height) == (768, 432)
 
 
-def test_rejects_malformed_output() -> None:
+async def test_rejects_malformed_output() -> None:
     det = OnnxYoloXDetector(Path("unused.onnx"))
 
-    async def bad_run(tensor: np.ndarray) -> np.ndarray:
+    def bad_run(_tensor: np.ndarray) -> np.ndarray:
         return np.zeros((3, 3, 3), dtype=np.float32)
 
     det._run_tensor = bad_run  # type: ignore[method-assign]
     with pytest.raises(InferenceError, match="expected model output"):
-        asyncio_run(det.infer(_frame()))
+        await det.infer(_frame())
 
 
 def test_open_detector_requires_weights(tmp_path: Path) -> None:
@@ -934,20 +934,12 @@ def test_open_detector_requires_weights(tmp_path: Path) -> None:
         open_detector(tmp_path / "nope.onnx")
 
 
-def asyncio_run(coro):  # helper kept minimal: tests are sync; stage tests own async style
-    import asyncio
-
-    return asyncio.run(coro)
-
-
 @pytest.mark.skipif(
     not (MODELS / "yolox_s.onnx").exists() or not GATE.exists(),
     reason="run backend/scripts/fetch_models.py to enable the real-model smoke test",
 )
-def test_real_model_detects_a_person_in_gate_clip() -> None:
+async def test_real_model_detects_a_person_in_gate_clip() -> None:
     """Letterbox + decode + session, end to end, on the real clip (spec A11.1)."""
-    import asyncio
-
     import cv2
 
     cap = cv2.VideoCapture(str(GATE))
@@ -959,11 +951,11 @@ def test_real_model_detects_a_person_in_gate_clip() -> None:
     frame = Frame(data=rgb, timestamp=0.0, width=rgb.shape[1], height=rgb.shape[0])
     det = open_detector(MODELS / "yolox_s.onnx")
     try:
-        found = asyncio.run(det.infer(frame))
+        found = await det.infer(frame)
     finally:
-        asyncio.run(det.close())
+        await det.close()
     people = [d for d in found if d.class_name == "person" and d.confidence > 0.5]
-    assert people, f"expected a person at frame 60, got {[(d.class_name, d.confidence) for d in found]}"
+    assert people, [(d.class_name, round(d.confidence, 3)) for d in found]
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1048,7 +1040,7 @@ def letterbox(image: np.ndarray, input_size: int = 640) -> tuple[np.ndarray, Let
     pad_y = (input_size - new_h) // 2
     canvas = np.full((input_size, input_size, 3), PAD_VALUE, dtype=np.uint8)
     canvas[pad_y : pad_y + new_h, pad_x : pad_x + new_w] = resized
-    tensor = canvas[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32)
+    tensor = canvas.transpose(2, 0, 1)[None].astype(np.float32)
     meta = LetterboxMeta(
         scale=scale,
         pad_x=pad_x,
@@ -1132,7 +1124,7 @@ def open_detector(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest backend/tests/test_pool.py backend/tests/test_detector.py -v`
-Expected: `test_real_model_detects_person_in_gate_clip` PASSES if assets were fetched in 3.1 (it should: frame 60 measured confidence 0.907), others pass; suite green.
+Expected: `test_real_model_detects_a_person_in_gate_clip` PASSES if assets were fetched in 3.1 (it should: frame 60 measured confidence 0.907), others pass; suite green.
 
 - [ ] **Step 5: Static checks + commit**
 

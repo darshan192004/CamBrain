@@ -3161,11 +3161,22 @@ Body: every matrix row has a named test; counts recorded so the next phase's gat
 
 | Gate step | Evidence | Result |
 |---|---|---|
-| `ruff check backend` / `ruff format --check backend` | command output | |
-| `mypy backend/app` | command output | |
-| `fetch_models.py --verify` | `ok` x 4 | |
-| `requirements.lock.txt` diff is `+tzdata` only | `git diff requirements.lock.txt` | |
-| default suite | `pytest -m "not rtsp and not slow" --ignore=backend/tests/rtsp` (count) | |
-| slow gate | `pytest -m slow` (`worst` seconds) | |
-| rtsp canaries | `pytest -m rtsp -rs` | |
-| commits | task → SHA list | |
+| `ruff check backend` / `ruff format --check backend` | `All checks passed!` / `106 files already formatted` | PASS |
+| `mypy backend/app` | `Success: no issues found in 59 source files` | PASS |
+| `fetch_models.py --verify` | `ok` x 4 (yolox_s, yolox_nano, yolox_m, gate.mp4) | PASS |
+| `requirements.lock.txt` diff is `+tzdata` only | `git diff 1e63da7..HEAD` → numstat `1 0`, `+tzdata==2026.5` | PASS |
+| default suite | `pytest -m "not rtsp and not slow" --ignore=backend/tests/rtsp` → `246 passed, 1 skipped (POSIX-only), 5 deselected` in 60.9s | PASS |
+| slow gate | `pytest -m slow` → `4 passed` in 101.2s; `worst` asserted < 2.0 by `test_real_alert_from_real_clip_under_2s` | PASS |
+| rtsp canaries | `pytest -m rtsp -rs` → `7 passed` in 77.4s (fixture launched MediaMTX itself; no skips) | PASS |
+| `git status --porcelain` | only `?? .tmp/` (never staged) | PASS |
+| commits | plan `c2582f9`; 3.1 `523deb1`; 3.2 `e98b715`; 3.3 `3de85b8`; 3.4 `04e4f2e`; 3.5 `82654c7`; 3.6 `ff8ccdb`; 3.7 `565792e`; 3.8 `f4ed2b7` + `5085428`; 3.9 `418d1ec`; 3.10 `285eb4d`; 3.11 `b5f62ed` | DONE |
+
+Deviations hit during execution (beyond locked D1–D6):
+
+- **Dependency claim corrected:** `tzdata==2026.5` added — Windows zoneinfo ships no IANA DB, so active-hours was untestable without it; lock regenerated with the Phase-0 `pip freeze` UTF-8/LF recipe (diff is exactly one added line).
+- **Cooldown boundary contradiction:** Task 3.7's suppression row and Task 3.8's rearm row both probed `elapsed == cooldown` with opposite expectations; resolved to `>=` (a 60s cooldown rearms at exactly 60s), and 3.7's probe moved to 30s in-window.
+- **YOLOX grid is input-size derived:** the nano gate letterboxes at 416 (3549 rows) and a hardcoded 640 grid (8400) rejected it — `decode` now builds grid/stride tables from `meta.input_size` and validates the row count against them; 640-grid tests unchanged and green.
+- **`ValidationError` has no `field=` kwarg** (the plan's type note, verified): replay names the condition in the message; tests assert on `message` because Phase 2's envelope keeps `field: null`.
+- **Lint adaptations vs plan snippets:** dict literals instead of `dict()` (C408), `asyncio.Event` + `contextlib.suppress` instead of a poll loop and try/except-pass (ASYNC110/SIM105) in the latency test, `_frame` renames (ARG002).
+- **Task 3.9 went green on first run** — its planned red was anticipated by the plan ("may instead be red-on-assert") because 3.6–3.8 already built the chain; it fired through gate → sample → stage → engine.
+- **Gate fixture skip message** points at `backend/scripts/fetch_models.py` (plain run), not `--verify`, which is check-only.

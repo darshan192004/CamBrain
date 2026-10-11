@@ -1911,7 +1911,7 @@ def test_multiple_windows_any_one_counts() -> None:
 
 
 def test_cooldown_suppresses_a_recent_firing() -> None:
-    config = base_config(last_fired_at=NOW.replace(minute=31))
+    config = base_config(last_fired_at=NOW.replace(minute=31, second=30))
     outcome = ENGINE.evaluate(track(), config, NOW)
     assert not outcome.fired
     check = next(c for c in outcome.checks if c.condition == "cooldown")
@@ -2107,7 +2107,7 @@ def _check_cooldown(now: datetime, config: RuleConfig) -> RuleCheck:
     if config.last_fired_at is None:
         return RuleCheck("cooldown", True, "no recent trigger on this track")
     elapsed = (now - config.last_fired_at).total_seconds()
-    if elapsed > config.cooldown_seconds:
+    if elapsed >= config.cooldown_seconds:
         return RuleCheck("cooldown", True, "cooldown expired")
     return RuleCheck(
         "cooldown",
@@ -2170,7 +2170,7 @@ Body: purity is what makes 02:30, IST, and the midnight wrap testable rows inste
 
 **Interfaces:**
 - Consumes: `Detector` (3.3), `Tracker` (3.5), `RulesEngine`/`RuleConfig`/`with_cooldown` (3.7), `FrameSink` from `pipeline.py`.
-- Produces: `Alert(rule_id, rule_name, severity, track_id, class_name, confidence, zone, fired_at, summary)`, `AlertSink = Callable[[Alert], Awaitable[None]]`, `AlertStage(detector, rules, on_alert, ...)` implementing `async __call__(frame: Frame) -> None`; `StreamManager.add_camera(config, *, sink: FrameSink | None = None)`.
+- Produces: `Alert(rule_id, rule_name, severity, track_id, class_name, confidence, zone, fired_at, summary)`, `AlertSink = Callable[[Alert], Awaitable[None] | None]` (sync sinks like `list.append` are allowed), `AlertStage(detector, rules, on_alert, ...)` implementing `async __call__(frame: Frame) -> None`; `StreamManager.add_camera(config, *, sink: FrameSink | None = None)`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2199,7 +2199,7 @@ class FakeDetector:
         self.calls = 0
         self.visible_from = visible_from
 
-    async def infer(self, frame: Frame) -> list[Detection]:
+    async def infer(self, _frame: Frame) -> list[Detection]:
         index = self.calls
         self.calls += 1
         if index < self.visible_from:
@@ -2273,7 +2273,7 @@ async def test_cooldown_rearms_on_a_later_pass() -> None:
 
 async def test_non_matching_class_never_alerts() -> None:
     class CarDetector(FakeDetector):
-        async def infer(self, frame: Frame) -> list[Detection]:
+        async def infer(self, _frame: Frame) -> list[Detection]:
             self.calls += 1
             return [Detection(class_name="car", confidence=0.9, bbox=(1, 1, 9, 9))]
 
@@ -2392,7 +2392,7 @@ class Alert:
     summary: str
 
 
-AlertSink = Callable[[Alert], Awaitable[None]]
+AlertSink = Callable[[Alert], Awaitable[None] | None]
 
 
 class AlertStage:
@@ -2433,7 +2433,7 @@ class AlertStage:
                 self._last_fired[key] = now
                 zone = config.roi.name if config.roi else None
                 where = zone or "frame"
-                await self._on_alert(
+                result = self._on_alert(
                     Alert(
                         rule_id=config.rule_id,
                         rule_name=config.name,
@@ -2446,6 +2446,8 @@ class AlertStage:
                         summary=f"1 {track.class_name} in {where}",
                     )
                 )
+                if result is not None:
+                    await result
 ```
 
 `backend/app/services/stream/stream_manager.py` — change `add_camera`:

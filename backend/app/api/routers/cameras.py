@@ -8,6 +8,7 @@ and a masked placeholder instead.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Response, status
@@ -19,6 +20,8 @@ from app.core.crypto import encrypt
 from app.core.errors import NotFoundError
 from app.db.models.camera import Camera
 from app.db.repositories.cameras import CameraRepository
+from app.services.stream.factory import SourceFactory, get_source_factory
+from app.services.stream.probe import classify_code, failure_outcome, probe_source
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -26,6 +29,7 @@ _MASK = "••••••••"
 # Authz runs as a dependency, which FastAPI solves before validating the
 # request body — so a viewer's malformed write is a 403, not a 422.
 AdminDep = Annotated[dict[str, Any], Depends(require_role_dep("admin"))]
+SourceFactoryDep = Annotated[SourceFactory, Depends(get_source_factory)]
 
 
 def _repo(db: Any, claims: dict[str, Any]) -> CameraRepository:
@@ -122,18 +126,23 @@ def delete_camera(camera_id: int, claims: AdminDep, db: DbSessionDep) -> Respons
 
 
 @router.post("/{camera_id}/test", response_model=CameraTestResult)
-async def test_camera(camera_id: int, claims: AdminDep, db: DbSessionDep) -> CameraTestResult:
+async def test_camera(
+    camera_id: int,
+    claims: AdminDep,
+    db: DbSessionDep,
+    factory: SourceFactoryDep,
+) -> CameraTestResult:
     """Probe the RTSP endpoint. Always 200 — a failed probe is data, not an error."""
     camera = _repo(db, claims).get(camera_id)
     if camera is None:
         raise NotFoundError("camera not found")
-    # Phase 4 wires the real probe; until then a diagnostic cannot claim a
-    # camera it has never reached is live, so surface an explicit not-wired code.
-    return CameraTestResult(
-        ok=False,
-        message="RTSP probe is not wired yet (Phase 4).",
-        error_code="CANCELLED",
-    )
+    try:
+        source = factory(camera)
+    except Exception as exc:  # noqa: BLE001 - a decrypt failure is still diagnostic data
+        outcome = failure_outcome(classify_code(exc, fallback="DECODE_FAILED"), camera.rtsp_url)
+    else:
+        outcome = await probe_source(source, url=camera.rtsp_url)
+    return CameraTestResult(**asdict(outcome))
 
 
 @router.post("/{camera_id}/snapshot", response_model=CameraTestResult)

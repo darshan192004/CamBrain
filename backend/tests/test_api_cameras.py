@@ -6,12 +6,14 @@ Covers the Phase 2 verification-matrix rows: `test_get_never_returns_password`,
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.errors import StreamError
 from app.db.models import Camera, Site, User
+from app.services.stream.source import FrameSource
 
 _URL = "rtsp://10.0.0.5:554/Streaming/Channels/101"
 
@@ -196,23 +198,98 @@ def test_cross_tenant_returns_404(
     assert resp.json()["error"]["code"] == "NOT_FOUND"
 
 
-def test_test_endpoint_returns_ok_false_with_code(
+def _override_factory(client: TestClient, factory: Callable[[Camera], FrameSource]):
+    """Context manager: point the API's frame-source seam at a test double."""
+    from contextlib import contextmanager
+
+    from app.services.stream.factory import get_source_factory
+
+    @contextmanager
+    def _ctx() -> Iterator[None]:
+        client.app.dependency_overrides[get_source_factory] = lambda: factory
+        try:
+            yield
+        finally:
+            client.app.dependency_overrides.pop(get_source_factory, None)
+
+    return _ctx()
+
+
+def test_probe_ok_reports_dims_and_fps(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: object
+) -> None:
+    """A reachable source reports real dimensions, fps, and a human message."""
+    from pathlib import Path
+
+    from app.services.stream.file_source import FileSource
+
+    clip = Path(str(gate_clip_path))
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: FileSource(clip, loop=False)):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/test", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert data["error_code"] is None
+    assert data["frame_width"] and data["frame_width"] > 0
+    assert data["frame_height"] and data["frame_height"] > 0
+    assert data["fps"] and data["fps"] > 0
+    assert data["latency_ms"] is not None and data["latency_ms"] >= 0
+    assert data["message"].startswith("Connected.")
+
+
+def test_probe_transport_failure_is_200_with_code(
     client: TestClient, admin_headers: dict[str, str]
 ) -> None:
-    """A failed probe is 200 with a typed error_code, not an HTTP error."""
+    """A failed probe is data, not an HTTP error (API Cameras /test)."""
+
+    class _Refused:
+        async def frames(self) -> AsyncIterator[object]:
+            raise ConnectionRefusedError("connection refused")
+            yield  # pragma: no cover - makes this an async generator
+
+        async def close(self) -> None:
+            return None
+
     created = _create(client, admin_headers)
-    resp = client.post(f"/api/v1/cameras/{created['id']}/test", headers=admin_headers)
+    with _override_factory(client, lambda _cam: _Refused()):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/test", headers=admin_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is False
-    assert data["error_code"] in {
-        "AUTH_FAILED",
-        "CONNECT_TIMEOUT",
-        "HOST_UNREACHABLE",
-        "NO_SUCH_STREAM",
-        "DECODE_FAILED",
-        "CANCELLED",
-    }
+    assert data["error_code"] == "HOST_UNREACHABLE"
+    assert data["message"]
+    # Never leak the camera password in a diagnostic message.
+    assert "secret123" not in resp.text
+
+
+def test_probe_stream_error_reason_is_honoured(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """A StreamError raised by the source carries its typed reason through."""
+
+    class _Auth:
+        async def frames(self) -> AsyncIterator[object]:
+            raise StreamError("AUTH_FAILED: rtsp://10.0.0.5:554/… (401 Unauthorized)")
+            yield  # pragma: no cover
+
+        async def close(self) -> None:
+            return None
+
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: _Auth()):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/test", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is False
+    assert data["error_code"] == "AUTH_FAILED"
+    assert "Authentication failed" in data["message"]
+
+
+def test_probe_unknown_camera_404(client: TestClient, admin_headers: dict[str, str]) -> None:
+    resp = client.post("/api/v1/cameras/999999/test", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
 
 
 def test_stream_is_501_until_wired(client: TestClient, admin_headers: dict[str, str]) -> None:

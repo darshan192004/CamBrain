@@ -82,13 +82,12 @@ Backend contract first (it is what the UI consumes), then foundation, then verti
 
 ```python
 # backend/app/services/stream/factory.py
-"""Injectable FrameSource construction for API routes (spec 11.1)."""
+"""Injectable FrameSource construction for API routes (spec 11.1 / plan D9)."""
 
 from collections.abc import Callable
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from app.db.models import Camera
-from app.services.stream.file_source import FileSource
 from app.services.stream.rtsp_source import RtspSource
 from app.services.stream.source import FrameSource
 
@@ -96,14 +95,16 @@ from app.services.stream.source import FrameSource
 def connect_url(camera: Camera, *, decrypt: Callable[[str], str]) -> str:
     """Build a credentials-bearing RTSP URL from columns.
 
-    Credentials live in dedicated columns (DATABASE §4.4); this is the single
-    place they enter a URL, and that URL never touches a log or a response.
+    Credentials live in `rtsp_username` / `rtsp_password_enc` (DATABASE §4.4);
+    this is the single place they enter a URL, and that URL never touches a
+    log or a response. The stored token is Fernet text stored as bytes.
     """
     parts = urlsplit(camera.rtsp_url)
-    if camera.username:
-        userinfo = quote(camera.username, safe="")
-        if camera.password:
-            userinfo += ":" + quote(decrypt(camera.password), safe="")
+    if camera.rtsp_username:
+        userinfo = quote(camera.rtsp_username, safe="")
+        if camera.rtsp_password_enc is not None:
+            password = decrypt(camera.rtsp_password_enc.decode("ascii"))
+            userinfo += ":" + quote(password, safe="")
         netloc = f"{userinfo}@{parts.netloc}"
     else:
         netloc = parts.netloc
@@ -115,13 +116,18 @@ def default_source_factory(camera: Camera) -> FrameSource:
     from app.core.crypto import decrypt  # imported lazily: DPAPI touch only when used
 
     return RtspSource(connect_url(camera, decrypt=decrypt))
+
+
+def get_source_factory() -> SourceFactory:
+    """FastAPI dependency; tests override it with a FileSource/fake factory."""
+    return default_source_factory
 ```
 
-Routes depend on `SourceFactory = Callable[[Camera], FrameSource]` via FastAPI `Depends`; tests override the dependency with a `FileSource` factory (and with fakes that raise, for error paths). Probe, snapshot, and MJPEG all consume this one factory — no route opens a connection its own way.
+Routes depend on `SourceFactory = Callable[[Camera], FrameSource]` via an `Annotated` `SourceFactoryDep` (B008); tests override `get_source_factory` with a `FileSource` factory (and with fakes whose `async def frames()` raises, for error paths). Probe, snapshot, and MJPEG all consume this one factory — no route opens a connection its own way.
 
-### Probe (4.1) — semantics
+### Probe (4.1) — semantics (as shipped)
 
-Always `200`; failure is data. Read up to 10 frames with a 3s wall budget; success reports `latency_ms` (open→first frame), `frame_width/height` (first frame), `fps` (frames over elapsed). Any exception → `classify_rtsp_error(exc)` → `error_code` + the human `message` from API.md's examples. Uses `AdminDep` (API.md: role admin).
+Always `200`; failure is data. `probe_source(source, url=…, budget_s=3.0, max_frames=10)` in `stream/probe.py` returns a frozen `ProbeOutcome` dataclass the route maps to `CameraTestResult` via `asdict`. Success: `latency_ms` (probe start → first frame), `frame_width/height` (first frame), `fps` ((count−1)/span). Failure path: exception from `frames()` → `classify_code` (honours `StreamError` `"CODE: …"` message prefix first, then `classify_rtsp_error`, else fallback); budget expiry with zero frames → the source's `last_error` if typed, else `CONNECT_TIMEOUT`. Human messages come from API.md's examples, URLs via `mask_url`. Uses `AdminDep` (API.md: role admin).
 
 ### JPEG encoding (4.2 / 4.3)
 
@@ -193,11 +199,11 @@ def mjpeg_parts(source: FrameSource) -> AsyncIterator[bytes]:
 
 | Test file | Tests |
 |---|---|
-| `test_api_cameras.py` (edit) | `test_probe_ok_reports_dims_and_fps` (FileSource), `test_probe_failure_is_200_with_error_code`, `test_probe_unknown_camera_404`, `test_snapshot_returns_jpeg_magic`, `test_snapshot_404_unknown_camera`, `test_stream_sends_multipart_frames`, `test_stream_404_unknown_camera`, `test_stream_slot_cap_returns_503` (cap dependency overridden to 1, slot held) — replaces `test_stream_is_501_until_wired` |
+| `test_api_cameras.py` (edit) | `test_probe_ok_reports_dims_and_fps` (FileSource), `test_probe_transport_failure_is_200_with_code`, `test_probe_stream_error_reason_is_honoured`, `test_probe_unknown_camera_404`, `test_snapshot_returns_jpeg_magic`, `test_snapshot_404_unknown_camera`, `test_stream_sends_multipart_frames`, `test_stream_404_unknown_camera`, `test_stream_slot_cap_returns_503` (cap dependency overridden to 1, slot held) — replaces `test_stream_is_501_until_wired` |
 | `test_api_events.py` (edit) | `test_thumbnail_serves_file`, `test_thumbnail_404_when_absent`, `test_thumbnail_cross_tenant_404` |
 | `test_rois.py` (new) | `test_roi_survives_resolution_change` (verification matrix row) |
 | `test_mjpeg.py` (new) | `test_part_headers_and_jpeg_body`, `test_error_emits_empty_part_then_recovers`, `test_source_end_emits_close_boundary` |
-| `test_stream_factory.py` (new) | `test_connect_url_embeds_credentials_encoded`, `test_connect_url_without_username` |
+| `test_stream_factory.py` (new) | `test_connect_url_embeds_credentials_encoded`, `test_connect_url_without_username_is_unchanged`, `test_connect_url_username_only_has_no_colon`, `test_connect_url_decrypts_the_stored_token` |
 
 ### Contract amendments to API.md (synced in the task that lands them)
 
@@ -240,7 +246,7 @@ def mjpeg_parts(source: FrameSource) -> AsyncIterator[bytes]:
 | Requirement | Proving test | Task |
 |---|---|---|
 | Normalised ROI survives resolution change | `test_rois.py::test_roi_survives_resolution_change` | 4.5 |
-| Test-connection reports the real failure reason | `test_api_cameras.py::test_probe_failure_is_200_with_error_code` | 4.1 |
+| Test-connection reports the real failure reason | `test_api_cameras.py::test_probe_transport_failure_is_200_with_code` (+ `…stream_error_reason_is_honoured`) | 4.1 |
 | Live view needs no codec negotiation | `test_api_cameras.py::test_stream_sends_multipart_frames` | 4.3 |
 | No secret in API responses (snapshot/stream) | probe/snapshot tests assert body has no password | 4.1–4.2 |
 | Viewer cannot write | `src/settings` + guards: `viewer is blocked from /settings/*` (Vitest) | 4.8 |
@@ -290,14 +296,14 @@ def mjpeg_parts(source: FrameSource) -> AsyncIterator[bytes]:
 **Modify:** `backend/app/services/stream/factory.py` (new), `backend/app/api/routers/cameras.py`, `backend/tests/test_api_cameras.py`.
 
 **Steps:**
-1. Add `factory.py` as specified above (`connect_url`, `default_source_factory`) + `tests/test_stream_factory.py` (credential embedding, no-username path, password never in `rtsp_url` of any response).
-2. Failing tests: `test_probe_ok_reports_dims_and_fps` (override factory → `FileSource(gate_clip_path)`), `test_probe_failure_is_200_with_error_code` (factory raising `ConnectionError` → classify → `CONNECT_TIMEOUT`/`HOST_UNREACHABLE`), `test_probe_unknown_camera_404`.
-3. Implement `probe_camera(source_factory, camera) -> CameraTestResult`: open source, read ≤10 frames / ≤3s, latency to first frame, dims, fps; exceptions → `classify_rtsp_error` + API.md message copy. Replace the stub body in `test_camera`.
+1. Add `factory.py` as specified above (`connect_url`, `default_source_factory`, `get_source_factory`) + `tests/test_stream_factory.py` (credential embedding, no-username, username-only, decrypt-token path; password never in `rtsp_url` of any response).
+2. Failing tests: `test_probe_ok_reports_dims_and_fps` (override factory → `FileSource(gate_clip_path)`), `test_probe_transport_failure_is_200_with_code` (fake whose **`async def frames()`** raises `ConnectionRefusedError` → `HOST_UNREACHABLE`; a sync generator yields `TypeError` → `DECODE_FAILED`), `test_probe_stream_error_reason_is_honoured` (`StreamError("AUTH_FAILED: …")` → prefix wins), `test_probe_unknown_camera_404`.
+3. Implement `probe_source(source, *, url, budget_s=3.0, max_frames=10) -> ProbeOutcome` in `stream/probe.py` (`failure_outcome`, `classify_code` exported); replace the stub body in `test_camera` — factory call wrapped (decrypt failure → `DECODE_FAILED`), route maps outcome via `asdict`.
 
 **Acceptance:**
-- [ ] Probe on a FileSource factory reports real dims/fps/latency; always 200; failure carries one of the six `error_code`s.
-- [ ] Response never contains credentials (assert on JSON dump).
-- [ ] `test_stream_factory.py` proves credentials are percent-encoded into the netloc and absent when no username.
+- [x] Probe on a FileSource factory reports real dims/fps/latency; always 200; failure carries one of the six `error_code`s.
+- [x] Response never contains credentials (assert on JSON dump).
+- [x] `test_stream_factory.py` proves credentials are percent-encoded into the netloc and absent when no username.
 
 **Gate:** backend loop. **Commit:** `feat(api): real RTSP probe with the six documented error codes`
 

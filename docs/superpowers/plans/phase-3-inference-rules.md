@@ -550,21 +550,22 @@ def _place(out: np.ndarray, cell: int, *, cx: float, cy: float, w: float, h: flo
 def test_confident_box_lands_in_frame_pixels() -> None:
     out = _blank()
     # Cell (10, 5) of the stride-8 level: grid index 5*80+10 = 410.
-    # xy = (pred + grid) * stride = (10.5+10, 5.5+5) * 8 = (164, 84); wh = (8, 16).
+    # center = (pred + grid) * stride = (0.5+10, 0.5+5) * 8 = (84, 44);
+    # wh = (1, 2) * 8 = (8, 16) -> input box (80, 36)-(88, 52).
     _place(out, 410, cx=0.5, cy=0.5, w=1.0, h=2.0, obj=0.9, cls_idx=0, cls_score=0.8)
     dets = decode(out, META, conf_threshold=0.3)
     assert len(dets) == 1
     det = dets[0]
     assert det.class_name == "person"
     assert det.confidence == pytest.approx(0.72)
-    # un-letterbox: (x - pad) / scale
+    # un-letterbox: x1/y1 floor, x2/y2 ceil of (v - pad) / scale
     x1, y1, x2, y2 = det.bbox
-    assert (x1, y1, x2, y2) == (308, 128, 324, 160)
+    assert (x1, y1, x2, y2) == (140, 32, 156, 64)
 
 
 def test_class_names_come_from_coco_order() -> None:
     out = _blank()
-    _place(out, 0, cx=0.0, cy=0.0, w=1.0, h=1.0, obj=0.9, cls_idx=17, cls_score=0.9)
+    _place(out, 410, cx=0.5, cy=0.5, w=1.0, h=1.0, obj=0.9, cls_idx=16, cls_score=0.9)
     dets = decode(out, META, conf_threshold=0.3)
     assert dets[0].class_name == "dog"
     assert COCO_CLASSES[0] == "person" and len(COCO_CLASSES) == 80
@@ -610,7 +611,6 @@ def test_boxes_degenerate_after_unletterbox_are_dropped() -> None:
 def test_coco_class_list_matches_the_api_validator() -> None:
     """Two deliberate copies (decode order vs API frozenset) must not drift."""
     from app.api.schemas import COCO_CLASSES as API_CLASSES
-
     from app.services.inference.types import COCO_CLASSES
 
     assert len(COCO_CLASSES) == 80
@@ -629,7 +629,6 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.inference
 ```python
 """Inference layer: Detector protocol, YOLOX decode, tiers, tracker (spec A5.2, A10.4)."""
 
-from app.services.inference.tracker import TrackedObject, Tracker
 from app.services.inference.types import COCO_CLASSES, Detection, Detector, LetterboxMeta
 
 __all__ = [
@@ -637,8 +636,6 @@ __all__ = [
     "Detection",
     "Detector",
     "LetterboxMeta",
-    "TrackedObject",
-    "Tracker",
 ]
 ```
 
@@ -664,7 +661,7 @@ COCO_CLASSES: tuple[str, ...] = (
     "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
     "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
     "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-    "skis", "snowboard", "kite", "baseball bat", "baseball glove", "skateboard",
+    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard",
     "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife",
     "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
     "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed",
@@ -828,7 +825,9 @@ def decode(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest backend/tests/test_yolox_post.py -v`
-Expected: 8 passed. If `test_confident_box_lands_in_frame_pixels` disagrees on rounding, re-derive from the formula in the test comment — the empirical run in this plan pinned `floor`/`ceil` semantics.
+Expected: 9 passed. If `test_confident_box_lands_in_frame_pixels` disagrees on rounding, re-derive from the formula in the test comment — the empirical run in this plan pinned `floor`/`ceil` semantics.
+
+> Import order note: `inference/__init__.py` may not import `tiers`/`tracker` (Tasks 3.4/3.5). Task 3.2 creates it with **only the `types` exports** shown above; Task 3.5 extends it with `TrackedObject`/`Tracker`. Tests import `app.services.inference.types`/`yolox_post` directly either way.
 
 - [ ] **Step 5: Static checks + commit**
 

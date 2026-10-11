@@ -179,7 +179,7 @@ def test_multiple_windows_any_one_counts() -> None:
 
 
 def test_cooldown_suppresses_a_recent_firing() -> None:
-    config = base_config(last_fired_at=NOW.replace(minute=31))
+    config = base_config(last_fired_at=NOW.replace(minute=31, second=30))
     outcome = ENGINE.evaluate(track(), config, NOW)
     assert not outcome.fired
     check = next(c for c in outcome.checks if c.condition == "cooldown")

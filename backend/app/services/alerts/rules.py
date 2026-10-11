@@ -145,7 +145,7 @@ def _check_cooldown(now: datetime, config: RuleConfig) -> RuleCheck:
     if config.last_fired_at is None:
         return RuleCheck("cooldown", True, "no recent trigger on this track")
     elapsed = (now - config.last_fired_at).total_seconds()
-    if elapsed > config.cooldown_seconds:
+    if elapsed >= config.cooldown_seconds:
         return RuleCheck("cooldown", True, "cooldown expired")
     return RuleCheck(
         "cooldown",

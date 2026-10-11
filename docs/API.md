@@ -248,7 +248,17 @@ Class names rather than indices, because YOLOX and RT-DETR do not share an outpu
 
 `POST /api/v1/rules/{id}/test`
 
-Replays a supplied still or the most recent event through the rules engine and returns the outcome with per-condition results, so a rule that isn't firing can be diagnosed without waiting for real motion.
+Replays an event's stored detections through the rules engine and returns the outcome with per-condition results, so a rule that isn't firing can be diagnosed without waiting for real motion.
+
+Request body (optional):
+
+```json
+{
+  "event_id": 812
+}
+```
+
+Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when there is nothing to replay, or the event belongs to another camera or tenant. `422 VALIDATION_ERROR` names the frame size in its message when the camera has never produced one — the envelope's `field` slot stays `null` (Phase 2's handler never populates it). Evaluation runs at the event's `started_at` in UTC, and cooldown always reports "no recent trigger" because a replay carries no firing history. **Still-image upload is not implemented in Phase 3**: the JSON-only mutation rule blocks multipart, and a base64 still would drag model weights into API tests — deferred to Phase 5.
 
 ```json
 {

@@ -2826,13 +2826,17 @@ a normalised ROI cannot be interpreted, which is a 422, not a silent pass.
 from __future__ import annotations
 
 from datetime import UTC
-from typing import Any
 
 from app.core.errors import ValidationError
 from app.db.models import Camera, Event, EventDetection, Roi, Rule
 from app.services.alerts.roi import normalised_centroid
-from app.services.alerts.rules import RoiConfig, RuleConfig, RulesEngine, parse_active_hours
-from app.services.alerts.rules import RuleOutcome
+from app.services.alerts.rules import (
+    RoiConfig,
+    RuleConfig,
+    RuleOutcome,
+    RulesEngine,
+    parse_active_hours,
+)
 from app.services.inference.tracker import TrackedObject
 
 
@@ -2846,7 +2850,13 @@ def rule_config(rule: Rule, roi: Roi | None) -> RuleConfig:
         confidence_threshold=rule.confidence_threshold,
         cooldown_seconds=rule.cooldown_seconds,
         active_hours=parse_active_hours(rule.active_hours),
-        roi=RoiConfig(name=roi.name, points=tuple((p[0], p[1]) for p in roi.points)) if roi else None,
+        roi=(
+            RoiConfig(
+                name=roi.name, points=tuple((p[0], p[1]) for p in roi.points)
+            )
+            if roi
+            else None
+        ),
         last_fired_at=None,
     )
 
@@ -2861,30 +2871,27 @@ def replay(
     """Evaluate every stored detection; return the strongest candidate's checks.
 
     Raises:
-        ValidationError: When the camera has no frame size (422, field=camera)
-            or the event carries no detections.
+        ValidationError: When the camera has no frame size (422) or the event
+            carries no detections. Phase 2's envelope keeps `field` null, so
+            the condition is named in the message instead.
     """
-    if camera.frame_width is None or camera.frame_height is None:
+    width, height = camera.frame_width, camera.frame_height
+    if width is None or height is None:
         raise ValidationError(
-            "camera has no known frame size; run the camera once before testing rules",
-            field="camera",
+            "camera has no known frame size; run the camera once before testing rules"
         )
     if not detections:
-        raise ValidationError("event has no detections to replay", field="event_id")
+        raise ValidationError("event has no detections to replay")
     when = event.started_at if event.started_at.tzinfo else event.started_at.replace(tzinfo=UTC)
     outcomes: list[tuple[float, RuleOutcome]] = []
     for index, det in enumerate(detections, start=1):
-        centroid = normalised_centroid(
-            (int(det.bbox[0]), int(det.bbox[1]), int(det.bbox[2]), int(det.bbox[3])),
-            camera.frame_width,
-            camera.frame_height,
-        )
+        bbox = (int(det.bbox[0]), int(det.bbox[1]), int(det.bbox[2]), int(det.bbox[3]))
         track = TrackedObject(
             track_id=det.track_id or index,
             class_name=det.class_name,
             confidence=det.confidence,
-            bbox=(int(det.bbox[0]), int(det.bbox[1]), int(det.bbox[2]), int(det.bbox[3])),
-            centroid=centroid,
+            bbox=bbox,
+            centroid=normalised_centroid(bbox, width, height),
         )
         outcomes.append((det.confidence, engine.evaluate(track, config, when)))
     # Most conditions passed wins; confidence breaks ties; fired (all five)
@@ -2893,7 +2900,7 @@ def replay(
     return best
 ```
 
-> Type note: `ValidationError` must accept a `field=` kwarg — verify the constructor in `app/core/errors.py`; if it does not, pass the field through whatever mechanism `ValidationError` already uses (the 422 envelope documents `field`), do not change the error class.
+> Type note (verified during execution): `ValidationError` takes only a message — no `field=` kwarg — and Phase 2's envelope always emits `field: null`, so replay names the condition in the message ("frame size") and the tests assert on `message`, never `field`. Do not change the error class.
 
 `backend/app/api/routers/rules.py` — replace the stub:
 
@@ -2923,7 +2930,11 @@ async def test_rule(
     camera = CameraRepository(db, site_id=int(claims["site_id"])).get(rule.camera_id)
     if camera is None:
         raise NotFoundError("camera not found")
-    roi = RoiRepository(db, site_id=int(claims["site_id"])).get(rule.roi_id) if rule.roi_id else None
+    roi = (
+        RoiRepository(db, site_id=int(claims["site_id"])).get(rule.roi_id)
+        if rule.roi_id
+        else None
+    )
     outcome = replay(
         RulesEngine(),
         rule_config(rule, roi),

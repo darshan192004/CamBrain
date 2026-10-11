@@ -129,28 +129,31 @@ Routes depend on `SourceFactory = Callable[[Camera], FrameSource]` via an `Annot
 
 Always `200`; failure is data. `probe_source(source, url=…, budget_s=3.0, max_frames=10)` in `stream/probe.py` returns a frozen `ProbeOutcome` dataclass the route maps to `CameraTestResult` via `asdict`. Success: `latency_ms` (probe start → first frame), `frame_width/height` (first frame), `fps` ((count−1)/span). Failure path: exception from `frames()` → `classify_code` (honours `StreamError` `"CODE: …"` message prefix first, then `classify_rtsp_error`, else fallback); budget expiry with zero frames → the source's `last_error` if typed, else `CONNECT_TIMEOUT`. Human messages come from API.md's examples, URLs via `mask_url`. Uses `AdminDep` (API.md: role admin).
 
-### JPEG encoding (4.2 / 4.3)
+### JPEG encoding (4.2 / 4.3) — as shipped (PyAV 19)
 
-`Frame.data` is a raw RGB ndarray (`source.py`) — snapshot and MJPEG both need an encoder. One helper, PyAV mjpeg:
+`Frame.data` is a raw RGB ndarray (`source.py`) — snapshot and MJPEG both need an encoder. PyAV 19 has **no `VideoFrame.encode`**; the encoder is a `CodecContext` with geometry/options set before the first `encode` (which lazily opens the codec). PyAV re-formats rgb24 → yuvj420p itself:
 
 ```python
 # backend/app/services/stream/jpeg.py
 """RGB ndarray -> JPEG bytes for snapshot and MJPEG (API Cameras)."""
 
-from av import VideoFrame
+import av
+from av.codec import CodecContext
 
 from app.services.stream.source import Frame
 
+DEFAULT_QUALITY = 5
 
-def encode_jpeg(frame: Frame, *, quality: int = 5) -> bytes:
-    """Encode one frame as JPEG.
 
-    quality maps to PyAV's mjpeg qscale (2 = best, 31 = worst); 5 is the
-    CCTV default — sharp enough to read a face, small enough for 3 fps tiles.
-    """
-    vf = VideoFrame.from_ndarray(frame.data, format="rgb24")
-    packet = vf.encode(format="mjpeg", options={"qscale": str(quality)})
-    return bytes(packet[0]) if packet else b""
+def encode_jpeg(frame: Frame, *, quality: int = DEFAULT_QUALITY) -> bytes:
+    """Encode one frame as JPEG (quality = FFmpeg mjpeg qscale, 2 best..31 worst)."""
+    ctx = CodecContext.create("mjpeg", "w")
+    ctx.width, ctx.height = frame.width, frame.height
+    ctx.pix_fmt = "yuvj420p"
+    ctx.options = {"qscale": str(quality)}
+    vf = av.VideoFrame.from_ndarray(frame.data, format="rgb24")
+    packets = ctx.encode(vf)
+    return b"".join(bytes(packet) for packet in packets)
 ```
 
 Probe reads `frame.width/height` (no encoding); snapshot encodes frame 1; MJPEG encodes every frame it forwards.
@@ -314,9 +317,9 @@ def mjpeg_parts(source: FrameSource) -> AsyncIterator[bytes]:
 **Steps:** add `stream/jpeg.py` (`encode_jpeg`); failing tests `test_snapshot_returns_jpeg_magic` (`FF D8` prefix, `Content-Type: image/jpeg`), `test_snapshot_404_unknown_camera`; implement: first frame from the same factory → `Response(encode_jpeg(frame), media_type="image/jpeg")` with `Cache-Control: no-store`. API.md: document the response under the cameras table.
 
 **Acceptance:**
-- [ ] `POST /cameras/{id}/snapshot` → `200 image/jpeg`, one frame, no-store.
-- [ ] API.md documents the binary contract (D2).
-- [ ] Viewer role allowed (API.md: `any`).
+- [x] `POST /cameras/{id}/snapshot` → `200 image/jpeg`, one frame, no-store.
+- [x] API.md documents the binary contract (D2).
+- [x] Viewer role allowed (API.md: `any`).
 
 **Gate:** backend loop + openapi spec test still green. **Commit:** `feat(api): snapshot captures a real JPEG frame for the roi editor`
 

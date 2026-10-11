@@ -17,11 +17,12 @@ from fastapi.responses import JSONResponse
 from app.api.deps import ClaimsDep, DbSessionDep, require_role_dep
 from app.api.schemas import CameraCreate, CameraOut, CameraPatch, CameraTestResult
 from app.core.crypto import encrypt
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, StreamError
 from app.db.models.camera import Camera
 from app.db.repositories.cameras import CameraRepository
 from app.services.stream.factory import SourceFactory, get_source_factory
-from app.services.stream.probe import classify_code, failure_outcome, probe_source
+from app.services.stream.jpeg import encode_jpeg
+from app.services.stream.probe import capture_frame, classify_code, failure_outcome, probe_source
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -145,16 +146,33 @@ async def test_camera(
     return CameraTestResult(**asdict(outcome))
 
 
-@router.post("/{camera_id}/snapshot", response_model=CameraTestResult)
-async def snapshot_camera(camera_id: int, claims: ClaimsDep, db: DbSessionDep) -> CameraTestResult:
-    """Capture a single JPEG. Phase 4 wires the real frame source."""
+@router.post("/{camera_id}/snapshot")
+async def snapshot_camera(
+    camera_id: int,
+    claims: ClaimsDep,
+    db: DbSessionDep,
+    factory: SourceFactoryDep,
+) -> Response:
+    """Capture a single JPEG frame (D2: image/jpeg bytes, never a JSON body).
+
+    Role `any` — the ROI editor draws against a frozen still. A camera that
+    cannot produce a frame fails through the standard error envelope, never
+    a half-written JPEG.
+    """
     camera = _repo(db, claims).get(camera_id)
     if camera is None:
         raise NotFoundError("camera not found")
-    return CameraTestResult(
-        ok=False,
-        message="Snapshot is not wired yet (Phase 4).",
-        error_code="CANCELLED",
+    try:
+        source = factory(camera)
+        frame = await capture_frame(source)
+    except Exception as exc:  # noqa: BLE001 - surfaced as the standard envelope
+        outcome = failure_outcome(classify_code(exc, fallback="CONNECT_TIMEOUT"), camera.rtsp_url)
+        raise StreamError(outcome.message) from exc
+    jpeg = encode_jpeg(frame)
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
     )
 
 

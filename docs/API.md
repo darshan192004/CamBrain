@@ -154,6 +154,10 @@ Opens a short-lived connection, reads up to 10 frames, closes it.
 
 > The brief anticipated "easy setup wizard … that tells the user exactly what's wrong." This endpoint is where that lives. **Add-camera is the product's first impression** — it has to fail usefully.
 
+`POST /api/v1/cameras/{id}/snapshot`
+
+`200` with `Content-Type: image/jpeg` and `Cache-Control: no-store` — one encoded frame as **binary**, not JSON (the ROI editor draws against this still; role `any`). `404` for an unknown camera. When no frame can be read, the standard error envelope carries the reason instead of a half-written JPEG.
+
 `GET /api/v1/cameras/{id}/stream`
 
 `multipart/x-mixed-replace; boundary=frame`. On stream error, emits a zero-length part so the client re-reads the next header. Rate limited to 4 concurrent streams per session. See [memory.md](memory.md) for why MJPEG and not WebRTC.

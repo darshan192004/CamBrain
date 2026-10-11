@@ -7,12 +7,16 @@ Covers the Phase 2 verification-matrix rows: `test_get_never_returns_password`,
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.errors import StreamError
 from app.db.models import Camera, Site, User
+from app.services.stream.factory import get_source_factory
+from app.services.stream.file_source import FileSource
 from app.services.stream.source import FrameSource
 
 _URL = "rtsp://10.0.0.5:554/Streaming/Channels/101"
@@ -200,9 +204,6 @@ def test_cross_tenant_returns_404(
 
 def _override_factory(client: TestClient, factory: Callable[[Camera], FrameSource]):
     """Context manager: point the API's frame-source seam at a test double."""
-    from contextlib import contextmanager
-
-    from app.services.stream.factory import get_source_factory
 
     @contextmanager
     def _ctx() -> Iterator[None]:
@@ -216,13 +217,9 @@ def _override_factory(client: TestClient, factory: Callable[[Camera], FrameSourc
 
 
 def test_probe_ok_reports_dims_and_fps(
-    client: TestClient, admin_headers: dict[str, str], gate_clip_path: object
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
 ) -> None:
     """A reachable source reports real dimensions, fps, and a human message."""
-    from pathlib import Path
-
-    from app.services.stream.file_source import FileSource
-
     clip = Path(str(gate_clip_path))
     created = _create(client, admin_headers)
     with _override_factory(client, lambda _cam: FileSource(clip, loop=False)):
@@ -290,6 +287,62 @@ def test_probe_unknown_camera_404(client: TestClient, admin_headers: dict[str, s
     resp = client.post("/api/v1/cameras/999999/test", headers=admin_headers)
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_snapshot_returns_jpeg_magic(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """Snapshot is a real JPEG with no-store, not a JSON envelope (D2)."""
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: FileSource(Path(str(gate_clip_path)), loop=False)):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/snapshot", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.content.startswith(b"\xff\xd8")
+    assert b"secret123" not in resp.content
+
+
+def test_snapshot_404_unknown_camera(client: TestClient, admin_headers: dict[str, str]) -> None:
+    resp = client.post("/api/v1/cameras/999999/snapshot", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_snapshot_viewer_allowed(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    viewer_headers: dict[str, str],
+    gate_clip_path: Path,
+) -> None:
+    """Snapshot is role `any` — the ROI editor must not need admin."""
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: FileSource(Path(str(gate_clip_path)), loop=False)):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/snapshot", headers=viewer_headers)
+    assert resp.status_code == 200
+
+
+def test_snapshot_source_failure_is_error_envelope(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """An unreadable camera fails with the standard envelope, never a half-JPEG."""
+
+    class _Refused:
+        async def frames(self) -> AsyncIterator[object]:
+            raise ConnectionRefusedError("connection refused")
+            yield  # pragma: no cover
+
+        async def close(self) -> None:
+            return None
+
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: _Refused()):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/snapshot", headers=admin_headers)
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body["error"]["code"] == "INTERNAL"
+    assert "Could not connect" in body["error"]["message"]
+    assert "secret123" not in resp.text
 
 
 def test_stream_is_501_until_wired(client: TestClient, admin_headers: dict[str, str]) -> None:

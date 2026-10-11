@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from app.core.errors import StreamError
 from app.core.logging import mask_url
 from app.services.stream.rtsp_source import classify_rtsp_error
-from app.services.stream.source import FrameSource
+from app.services.stream.source import Frame, FrameSource
 
 #: The six codes API.md assigns to POST /cameras/{id}/test.
 ERROR_CODES = frozenset(
@@ -129,3 +129,27 @@ async def probe_source(
         frame_height=height,
         fps=fps,
     )
+
+
+async def capture_frame(source: FrameSource, *, budget_s: float = 5.0) -> Frame:
+    """Read the first frame within `budget_s`, then close the source.
+
+    Raises `StreamError` with a typed `CODE:` prefix when no frame arrives;
+    exceptions from the source itself propagate for `classify_code`.
+    """
+    try:
+        async with asyncio.timeout(budget_s):
+            async for frame in source.frames():
+                return frame
+        last = getattr(source, "last_error", None)
+        if isinstance(last, StreamError):
+            raise last
+        raise StreamError(f"CONNECT_TIMEOUT: no frame within {budget_s:g}s")
+    except TimeoutError as exc:
+        last = getattr(source, "last_error", None)
+        if isinstance(last, StreamError):
+            raise last from exc
+        raise StreamError(f"CONNECT_TIMEOUT: no frame within {budget_s:g}s") from exc
+    finally:
+        with contextlib.suppress(Exception):
+            await source.close()

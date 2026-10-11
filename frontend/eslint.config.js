@@ -48,6 +48,9 @@ export default [
     rules: {
       "vue/multi-word-component-names": "off",
       "vue/singleline-html-element-content-newline": "off",
+      // Prettier prints Vue void elements self-closed (<input />); the rule's
+      // default demands <input>, so the two formatters would fight.
+      "vue/html-self-closing": "off",
     },
   },
 ];

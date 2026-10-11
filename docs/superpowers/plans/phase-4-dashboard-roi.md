@@ -400,8 +400,8 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - reload hydration: `/auth/me` failure → logout to `/login`.
 
 **Acceptance:**
-- [ ] Routes per design §3 (all eight paths registered; placeholder views allowed until their tasks).
-- [ ] Viewer: nav item absent **and** guard rejects (defence in depth, API.md §5).
+- [x] Routes per design §3 (all eight paths registered; placeholder views allowed until their tasks).
+- [ ] Viewer: nav item absent **and** guard rejects (defence in depth, API.md §5). *(guard + RoleGate proven here; the concrete Sidebar item test lands in 4.9)*
 
 **Gate:** frontend loop. **Commit:** `feat(frontend): login, session hydration, and route guards`
 

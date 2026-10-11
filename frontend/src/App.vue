@@ -1,13 +1,9 @@
 <script setup>
-// Scaffold root. The real shell — sidebar, top bar, status bar, router —
-// is built in Phase 4. This exists so `npm run build` produces a real bundle.
+// Root: the shell (sidebar, top bar, status bar) lands in task 4.9 — the
+// router owns the screen itself from 4.8 on.
+import { RouterView } from "vue-router";
 </script>
 
 <template>
-  <main class="p-8">
-    <h1 class="text-2xl font-semibold">CamBrain</h1>
-    <p class="text-sm opacity-70">
-      Dashboard scaffold — Phase 4 builds the shell.
-    </p>
-  </main>
+  <RouterView />
 </template>

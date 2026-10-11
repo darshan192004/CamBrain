@@ -8,33 +8,7 @@ import {
   setOnAuthError,
 } from "../api/client.js";
 import { clearTokens, getAccessToken, setTokens } from "../api/token.js";
-
-/**
- * A minimal Response stand-in for the fetch mock.
- * @param {number} status HTTP status
- * @param {object} payload JSON body
- * @returns {object} Response-like object
- */
-const jsonRes = (status, payload) => ({
-  ok: status >= 200 && status < 300,
-  status,
-  headers: new Headers(),
-  json: async () => payload,
-  arrayBuffer: async () => new ArrayBuffer(0),
-});
-
-/**
- * The API's standard error envelope.
- * @param {number} status HTTP status
- * @param {string} code machine code
- * @param {string} message human message
- * @param {object} [extra] extra envelope fields (field, correlation_id)
- * @returns {object} Response-like 4xx
- */
-const envelope = (status, code, message, extra = {}) =>
-  jsonRes(status, {
-    error: { code, message, field: null, correlation_id: "cid-1", ...extra },
-  });
+import { envelope, jsonRes } from "./api-mocks.js";
 
 beforeEach(() => {
   clearTokens();

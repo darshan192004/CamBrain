@@ -130,10 +130,10 @@ Phases are sequenced so that **each phase ends with something demonstrable**. No
 - [ ] Vue app shell, router, Pinia stores
 - [ ] Design tokens → CSS variables
 - [ ] `ui/` primitives copied from shadcn-vue, restyled to tokens
-- [ ] Login + AuthGuard + RoleGate
-- [ ] `AppShell` · `Sidebar` · `TopBar` · `StatusBar`
-- [ ] `CameraGrid` + `CameraTile` — MJPEG live view, states per [design.md](design.md)
-- [ ] `AddCameraDialog` with **test connection** and real failure reasons
+- [x] Login + AuthGuard + RoleGate
+- [x] `AppShell` ▸ `Sidebar` ▸ `TopBar` ▸ `StatusBar`
+- [x] `CameraGrid` + `CameraTile` — MJPEG live view, states per [design.md](design.md)
+- [x] `AddCameraDialog` with **test connection** and real failure reasons
 - [ ] `RoiEditor` — frozen snapshot, draggable vertices, coverage %, zone list, class filter
 - [ ] Normalised coordinate storage verified against a resolution change
 - [ ] Event log — table, filters, thumbnails, bulk acknowledge

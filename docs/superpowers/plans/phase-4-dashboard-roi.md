@@ -440,7 +440,7 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 
 ## Task 4.11 — AddCameraDialog + ConnectionTest
 
-**New:** `src/camera/AddCameraDialog.vue`, `src/camera/ConnectionTest.vue`, tests.
+**New:** `src/camera/AddCameraDialog.vue`, `src/camera/ConnectionTest.vue`, tests. **Backend extension (PRD "test before saving"):** `POST /api/v1/cameras/test` — `CameraCreate` body, `CameraTestResult` response, persists nothing (`routers/cameras.py::test_draft_camera`, API.md synced, OpenAPI gate updated).
 
 **Tests:**
 - form fields match `CameraCreate` payload (`name, rtsp_url, username, password, enabled, sample_fps, motion_threshold`); `sample_fps` bounded 2–5.
@@ -450,8 +450,8 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - viewer: add tile hidden (RoleGate), dialog not reachable.
 
 **Acceptance:**
-- [ ] A failing connection shows the actual reason (spec §8 / design §8 — the load-bearing diagnostic).
-- [ ] Password never echoed back (response has `has_password` only).
+- [x] A failing connection shows the actual reason (spec §8 / design §8 — the load-bearing diagnostic). — six-code copy table + spinner/success line covered by `add-camera.spec.js` (61 tests / 11 files, gate green).
+- [x] Password never echoed back (response has `has_password` only). — store assertion: created row carries `has_password: true` + masked `password`, plaintext absent.
 
 **Checkpoint B (done with 4.10):** core "configure a camera" path live. **Gate:** frontend loop. **Commit:** `feat(frontend): add-camera dialog with real connection diagnostics`
 

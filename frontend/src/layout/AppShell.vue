@@ -5,6 +5,7 @@
 // status bar. /login renders outside this shell (route meta.public).
 import { RouterView } from "vue-router";
 
+import EventTicker from "../camera/EventTicker.vue";
 import Sidebar from "./Sidebar.vue";
 import StatusBar from "./StatusBar.vue";
 import TopBar from "./TopBar.vue";
@@ -19,11 +20,9 @@ import TopBar from "./TopBar.vue";
         <main class="min-h-0 flex-1 overflow-y-auto">
           <RouterView />
         </main>
-        <div
-          data-testid="live-region"
-          aria-live="polite"
-          class="shrink-0"
-        ></div>
+        <div data-testid="live-region" aria-live="polite" class="shrink-0">
+          <EventTicker />
+        </div>
       </div>
     </div>
     <StatusBar />

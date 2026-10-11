@@ -434,7 +434,7 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 
 **Acceptance:**
 - [ ] Live tiles play through the fetch parser with the in-memory Bearer (D3) — demo via MCP browser at the checkpoint.
-- [ ] Opening 5+ tiles: cap 12 means no `NO_CAPACITY`; a forced 503 shows the error state, not a blank tile.
+- [x] Opening 5+ tiles: cap 12 means no `NO_CAPACITY`; a forced 503 shows the error state, not a blank tile. — backend cap 12 shipped Phase 3; `mjpeg.spec` 503→`capacity` + `camera.spec` error state/Retry green (48 tests / 10 files, lint 0, build ok). Box 1 demo deferred to Checkpoint B (4.11 add flow).
 
 **Checkpoint B:** login → grid → add camera → live tile works (needs 4.11). **Gate:** frontend loop. **Commit:** `feat(frontend): live mjpeg grid with per-tile states and event ticker`
 

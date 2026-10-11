@@ -34,7 +34,7 @@ export function createAppRouter() {
         {
           path: "cameras",
           name: "cameras",
-          component: () => import("./views/PlaceholderView.vue"),
+          component: () => import("./camera/CameraGrid.vue"),
           meta: { title: "Cameras" },
         },
         {

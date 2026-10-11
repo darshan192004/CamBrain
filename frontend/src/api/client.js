@@ -16,9 +16,9 @@ import {
   setTokens,
 } from "./token.js";
 
-const BASE = "/api/v1";
-const CLIENT_HEADER = "X-CambBrain-Client";
-const CLIENT_VALUE = "cambrain-dashboard";
+export const BASE = "/api/v1";
+export const CLIENT_HEADER = "X-CambBrain-Client";
+export const CLIENT_VALUE = "cambrain-dashboard";
 
 /**
  * A non-2xx response decoded from the API's `{error: {...}}` envelope.

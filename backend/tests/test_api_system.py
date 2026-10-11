@@ -39,6 +39,7 @@ DOCUMENTED_PATHS = {
     ("post", "/api/v1/events/{event_id}/acknowledge"),
     ("post", "/api/v1/events/acknowledge-bulk"),
     ("get", "/api/v1/events/{event_id}/clip"),
+    ("get", "/api/v1/events/{event_id}/thumbnail"),
     ("get", "/api/v1/users"),
     ("post", "/api/v1/users"),
     ("get", "/api/v1/users/{user_id}"),

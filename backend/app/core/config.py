@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Opt-in to 0.0.0.0; the startup path logs a WARN when this is True.
     bind_all: bool = False
     db_path: Path = Path(r"%LOCALAPPDATA%\CamBrain\cambrain.db")
+    # Media root: event stills/clips live here; DB paths are relative to it
+    # (DATABASE §4.7), and the API never serves a path that resolves outside.
+    media_root: Path = Path(r"%LOCALAPPDATA%\CamBrain\media")
     key_dir: Path | None = None
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
     access_token_ttl_s: int = 43200

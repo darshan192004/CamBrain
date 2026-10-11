@@ -337,11 +337,11 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 
 **Modify:** `routers/events.py`, `docs/API.md`, `test_api_events.py`.
 
-**Steps:** failing tests (`test_thumbnail_serves_file` — write bytes to the event's `thumbnail_path` under the events dir first; `test_thumbnail_404_when_absent`; `test_thumbnail_cross_tenant_404`); implement `GET /events/{event_id}/thumbnail` → `FileResponse` when path exists **and** resolves inside the configured events root (path-traversal defence, SECURITY §6.2), else 404. API.md table gains the row (D8).
+**Steps:** failing tests (`test_thumbnail_serves_file` — relative `stills/{id}.jpg` under a monkeypatched `settings.media_root`; `test_thumbnail_404_when_absent`; `test_thumbnail_outside_root_is_404`; `test_thumbnail_cross_tenant_404`); implement `GET /events/{event_id}/thumbnail` → `FileResponse` when the path resolves **inside `settings.media_root`** (new setting; path-traversal defence, SECURITY §6.2), else 404. API.md table gains the row + prose (D8).
 
 **Acceptance:**
-- [ ] Serves the stored still; 404 when Phase 5 hasn't written one; cross-tenant 404.
-- [ ] A `thumbnail_path` pointing outside the events root is 404, not served.
+- [x] Serves the stored still; 404 when Phase 5 hasn't written one; cross-tenant 404.
+- [x] A `thumbnail_path` pointing outside the events root is 404, not served.
 
 **Gate:** backend loop. **Commit:** `feat(api): serve event thumbnails through the opaque url contract`
 

@@ -291,6 +291,7 @@ Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when t
 | `POST` | `/api/v1/events/{id}/acknowledge` | any |
 | `POST` | `/api/v1/events/acknowledge-bulk` | any |
 | `GET` | `/api/v1/events/{id}/clip` | any |
+| `GET` | `/api/v1/events/{id}/thumbnail` | any |
 | `GET` | `/api/v1/events/stats` | any |
 
 `GET /api/v1/events`
@@ -335,6 +336,8 @@ Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when t
 **`thumbnail_url` and `clip_url` are opaque URLs resolved by event id.** The client never constructs or sends a filesystem path — that is the path-traversal defence in [SECURITY.md §6.2](SECURITY.md).
 
 `GET /api/v1/events/{id}/clip` streams with `Content-Disposition: inline` and supports `Range`, so the browser can seek without downloading the whole file. Returns `404` when the clip was deleted by retention or never written because the disk quota refused it.
+
+`GET /api/v1/events/{id}/thumbnail` serves the stored still as `image/jpeg`, or `404` when no still was written (Phase 5 writes stills).
 
 `GET /api/v1/events/stats` returns counts by day, camera, and severity for the dashboard header.
 

@@ -384,8 +384,8 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - `raw()` returns bytes for snapshot/thumbnail (no JSON parse).
 
 **Acceptance:**
-- [ ] Token module holds access/refresh in module memory only (grep: no `localStorage`).
-- [ ] Every API-boundary function has a JSDoc typedef (design §9 mitigation).
+- [x] Token module holds access/refresh in module memory only (grep: no `localStorage`).
+- [x] Every API-boundary function has a JSDoc typedef (design §9 mitigation).
 
 **Gate:** frontend loop. **Commit:** `feat(frontend): api client with envelope errors and single-flight refresh`
 

@@ -23,8 +23,9 @@ from app.db.models.camera import Camera
 from app.db.repositories.cameras import CameraRepository
 from app.services.stream.factory import SourceFactory, get_source_factory
 from app.services.stream.jpeg import encode_jpeg
-from app.services.stream.mjpeg import StreamSlots, get_stream_slots, mjpeg_parts
+from app.services.stream.mjpeg import StreamSlots, get_stream_slots, tracked_parts
 from app.services.stream.probe import capture_frame, classify_code, failure_outcome, probe_source
+from app.services.stream.stats import StreamStats, get_stream_stats
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -34,6 +35,7 @@ _MASK = "••••••••"
 AdminDep = Annotated[dict[str, Any], Depends(require_role_dep("admin"))]
 SourceFactoryDep = Annotated[SourceFactory, Depends(get_source_factory)]
 StreamSlotsDep = Annotated[StreamSlots, Depends(get_stream_slots)]
+StreamStatsDep = Annotated[StreamStats, Depends(get_stream_stats)]
 
 
 def _error_response(request: Request, status_code: int, code: str, message: str) -> JSONResponse:
@@ -229,6 +231,7 @@ async def stream_camera(
     request: Request,
     factory: SourceFactoryDep,
     slots: StreamSlotsDep,
+    stats: StreamStatsDep,
 ) -> Response:
     """MJPEG live stream: multipart/x-mixed-replace with a per-IP slot cap (D1).
 
@@ -254,8 +257,10 @@ async def stream_camera(
         raise StreamError(outcome.message) from exc
 
     async def _guarded() -> AsyncIterator[bytes]:
+        # Stats feed GET /system/status: the tracked generator brackets this
+        # consumer and counts every multipart frame part (API §System).
         try:
-            async for part in mjpeg_parts(source):
+            async for part in tracked_parts(source, stats, camera_id):
                 yield part
         finally:
             slots.release(ip)

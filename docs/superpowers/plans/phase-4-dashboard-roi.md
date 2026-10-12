@@ -433,10 +433,10 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - ticker: polls `/events?limit=5&sort=-started_at` every 10s, newest first, cap 5, click → `/events/:id`, renders into the shell's `aria-live` region; poll stops on unmount.
 
 **Acceptance:**
-- [ ] Live tiles play through the fetch parser with the in-memory Bearer (D3) — demo via MCP browser at the checkpoint.
+- [x] Live tiles play through the fetch parser with the in-memory Bearer (D3) — demo via MCP browser at the checkpoint. — Checkpoint B: headed Playwright walk-through (login → grid → tile) with the bundled MediaMTX publishing the motion clip; tile reaches **LIVE** with real frames (`127.0.0.1:8554/cambbrain`), screenshots in `.tmp/checkpoint-b-*.png`.
 - [x] Opening 5+ tiles: cap 12 means no `NO_CAPACITY`; a forced 503 shows the error state, not a blank tile. — backend cap 12 shipped Phase 3; `mjpeg.spec` 503→`capacity` + `camera.spec` error state/Retry green (48 tests / 10 files, lint 0, build ok). Box 1 demo deferred to Checkpoint B (4.11 add flow).
 
-**Checkpoint B:** login → grid → add camera → live tile works (needs 4.11). **Gate:** frontend loop. **Commit:** `feat(frontend): live mjpeg grid with per-tile states and event ticker`
+**Checkpoint B (done 2026-10-12):** login → grid → add camera (test-connection failure + success) → live tile all work end-to-end in the browser. **Gate:** frontend loop. **Commit:** `feat(frontend): live mjpeg grid with per-tile states and event ticker`. **Checkpoint-B fix shipped alongside:** `GET /system/status` populated its `cameras` array with a placeholder `[]` (Phase 2 stub), so the status bar read `0 online` while a tile was live. Now fed by `StreamStats` (per-consumer frames + 5s liveness window, `tracked_parts` brackets every MJPEG consumer) → rows carry `{id, name, status, fps?, frames_processed?, last_frame_at?, last_error?}` per API.md; 3 tests, 276 passed.
 
 ## Task 4.11 — AddCameraDialog + ConnectionTest
 
@@ -453,7 +453,7 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - [x] A failing connection shows the actual reason (spec §8 / design §8 — the load-bearing diagnostic). — six-code copy table + spinner/success line covered by `add-camera.spec.js` (61 tests / 11 files, gate green).
 - [x] Password never echoed back (response has `has_password` only). — store assertion: created row carries `has_password: true` + masked `password`, plaintext absent.
 
-**Checkpoint B (done with 4.10):** core "configure a camera" path live. **Gate:** frontend loop. **Commit:** `feat(frontend): add-camera dialog with real connection diagnostics`
+**Checkpoint B (done with 4.10):** core "configure a camera" path live. **Gate:** frontend loop. **Commit:** `feat(frontend): add-camera dialog with real connection diagnostics`. Verified live 2026-10-12 via headed Playwright: failed probe shows the real reason (`DECODE_FAILED` against a closed port), success probe `Connected. 640×360 @ … fps. (2046 ms)`, save → tile → **LIVE**; `/system/status` reports the camera live with frame counts while a viewer is connected (see the 4.10 checkpoint fix note).
 
 ## Task 4.12 — Camera detail + rules editor
 

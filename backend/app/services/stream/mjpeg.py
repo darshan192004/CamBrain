@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator, Callable
 
 from app.services.stream.jpeg import encode_jpeg
 from app.services.stream.source import Frame, FrameSource
+from app.services.stream.stats import StreamStats
 
 BOUNDARY = b"frame"
 DEFAULT_PER_IP = 12
@@ -55,6 +56,29 @@ async def mjpeg_parts(
         with contextlib.suppress(Exception):
             await source.close()
     yield _CLOSE
+
+
+async def tracked_parts(
+    source: FrameSource,
+    stats: StreamStats,
+    camera_id: int,
+    *,
+    encoder: Callable[[Frame], bytes] = encode_jpeg,
+) -> AsyncIterator[bytes]:
+    """`mjpeg_parts` with consumer stats bracketing for GET /system/status.
+
+    `begin`/`end` wrap the whole consumer session (including client
+    disconnect — the generator's finally still runs), and every multipart
+    frame part is counted. `encoder` passes through for deterministic tests.
+    """
+    stats.begin(camera_id)
+    try:
+        async for part in mjpeg_parts(source, encoder=encoder):
+            if b"Content-Length" in part:
+                stats.frame(camera_id)
+            yield part
+    finally:
+        stats.end(camera_id)
 
 
 class StreamSlots:

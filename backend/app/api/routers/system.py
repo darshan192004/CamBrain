@@ -10,17 +10,19 @@ import time
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.api.deps import ClaimsDep, DbSessionDep, require_role_dep
 from app.api.schemas import HealthOut
 from app.core.config import settings
 from app.db.models.camera import Camera
 from app.db.models.site import Site
+from app.services.stream.stats import StreamStats, get_stream_stats
 
 router = APIRouter(tags=["system"])
 
 AdminDep = Annotated[dict[str, Any], Depends(require_role_dep("admin"))]
+StreamStatsDep = Annotated[StreamStats, Depends(get_stream_stats)]
 
 _VERSION = "0.1.0"
 
@@ -35,25 +37,46 @@ def health() -> HealthOut:
 
 
 @router.get("/system/status")
-def status_route(claims: ClaimsDep, db: DbSessionDep) -> dict[str, Any]:
+def status_route(claims: ClaimsDep, db: DbSessionDep, stats: StreamStatsDep) -> dict[str, Any]:
     """Hardware/model/camera summary for the dashboard.
 
-    Phase 3/4 wire real hardware probing and model info; this returns the
-    camera counts and a placeholder tier so the route contract is correct.
+    Camera rows join the stored row with live MJPEG stream stats: `live`
+    means a consumer is connected and frames are fresh (stats.py), while
+    anything else falls back to the stored `status`. Fields with no data
+    yet (`fps`, `frames_processed`, `last_error`) are omitted, not zeroed —
+    an absent number reads as "unknown", a zero reads as "measured none".
     """
     site_id = int(claims["site_id"])
-    camera_count = int(
-        db.execute(
-            select(func.count()).select_from(Camera).where(Camera.site_id == site_id)
-        ).scalar_one()
+    cameras = (
+        db.execute(select(Camera).where(Camera.site_id == site_id).order_by(Camera.id))
+        .scalars()
+        .all()
     )
+    camera_count = len(cameras)
     site = db.get(Site, site_id)
+    rows: list[dict[str, Any]] = []
+    for camera in cameras:
+        snapshot = stats.row(camera.id)
+        entry: dict[str, Any] = {
+            "id": camera.id,
+            "name": camera.name,
+            "status": "live" if snapshot["active"] else camera.status,
+        }
+        if snapshot["frames"]:
+            entry["frames_processed"] = snapshot["frames"]
+        if snapshot["fps"] is not None:
+            entry["fps"] = snapshot["fps"]
+        if snapshot["last_frame_at"] is not None:
+            entry["last_frame_at"] = snapshot["last_frame_at"]
+        if camera.last_error:
+            entry["last_error"] = camera.last_error
+        rows.append(entry)
     return {
         "version": _VERSION,
         "hardware_tier": "unknown",
         "hardware": {},
         "model": {},
-        "cameras": [],
+        "cameras": rows,
         "stats": {
             "cameras_total": camera_count,
             "retention_days": site.retention_days if site else None,

@@ -4,7 +4,7 @@
 // transform so only normalised coordinates ever leave via `closed`.
 // A draft under 500px² at source resolution is blocked with an explanation
 // (design §5.5) — that floor is the accidental-double-click guard.
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { request } from "../api/client.js";
 import { fromPixels, minAreaPx, toPixels } from "./geometry.js";
@@ -23,9 +23,13 @@ const props = defineProps({
     type: Number,
     default: 360,
   },
+  initialPoints: {
+    type: Array,
+    default: () => [],
+  },
 });
 
-const emit = defineEmits(["closed", "cancelled"]);
+const emit = defineEmits(["closed", "cancelled", "update"]);
 
 const MIN_VERTICES = 3;
 const MIN_AREA_PX = 500;
@@ -34,12 +38,26 @@ const CLOSE_RADIUS_PX = 8;
 const surface = ref(null);
 const snapshotUrl = ref("");
 const snapshotError = ref("");
-const draft = ref([]);
+const draft = ref(props.initialPoints.map((pt) => [...pt]));
 const selectedIndex = ref(-1);
 const dragging = ref(-1);
 const minAreaError = ref("");
 
 let objectUrl = null;
+
+// Reseed when the editor loads another zone's polygon (select, cancel,
+// Esc). Echoes of this canvas's own `update`/`closed` emits compare equal
+// and are skipped, so a drag never resets its own selection mid-gesture.
+watch(
+  () => props.initialPoints,
+  (next) => {
+    const incoming = (next ?? []).map((pt) => [...pt]);
+    if (JSON.stringify(incoming) === JSON.stringify(draft.value)) return;
+    draft.value = incoming;
+    selectedIndex.value = -1;
+    minAreaError.value = "";
+  },
+);
 
 /**
  * Letterbox transform: fit frameWidth×frameHeight inside the surface rect.
@@ -89,6 +107,17 @@ const polygonPoints = computed(() =>
 );
 
 /**
+ * Publish the current draft to the parent (dirty tracking, save payload).
+ * @returns {void}
+ */
+function emitUpdate() {
+  emit(
+    "update",
+    draft.value.map(([x, y]) => [x, y]),
+  );
+}
+
+/**
  * Try to finish the draft; blocked below the min-area floor.
  * @returns {void}
  */
@@ -100,12 +129,11 @@ function tryClose() {
     return;
   }
   minAreaError.value = "";
+  selectedIndex.value = -1;
   emit(
     "closed",
     draft.value.map(([x, y]) => [x, y]),
   );
-  draft.value = [];
-  selectedIndex.value = -1;
 }
 
 /**
@@ -139,6 +167,7 @@ function onSurfaceClick(ev) {
   draft.value = [...draft.value, fromDisplay(dx, dy)];
   selectedIndex.value = draft.value.length - 1;
   minAreaError.value = "";
+  emitUpdate();
 }
 
 /**
@@ -177,6 +206,7 @@ function onVertexKey(index, ev) {
   draft.value = draft.value.map((pt, i) =>
     i === index ? fromDisplay(cx + dx, cy + dy) : pt,
   );
+  emitUpdate();
 }
 
 /**
@@ -199,6 +229,7 @@ function onSurfacePointermove(ev) {
   const rect = surface.value.getBoundingClientRect();
   const next = fromDisplay(ev.clientX - rect.left, ev.clientY - rect.top);
   draft.value = draft.value.map((pt, i) => (i === dragging.value ? next : pt));
+  emitUpdate();
 }
 
 /**

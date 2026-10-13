@@ -486,7 +486,7 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - `422` frame-size message shown as-is.
 
 **Acceptance:**
-- [ ] The Phase 3 endpoint is reachable from the UI with per-condition reasons visible.
+- [x] The Phase 3 endpoint is reachable from the UI with per-condition reasons visible. — `RuleDiagnostics` renders the `/rules/{id}/test` result (fired banner, icon+text per check, verbatim detail); wired per-rule in `RulesList`; 7 new tests, 96 total green.
 
 **Gate:** frontend loop. **Commit:** `feat(frontend): rule diagnostics from the replay endpoint`
 
@@ -508,10 +508,10 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - keyboard: Tab/arrow-focus a vertex, arrows nudge 1px, Shift+arrows 10px, Enter closes, Esc cancels (design §11).
 
 **Acceptance:**
-- [ ] Only normalised coordinates ever leave the component (assert emitted payload ∈ [0,1]).
-- [ ] Geometry unit tests cover round-trip, coverage, min-area, edge-inclusive containment.
+- [x] Only normalised coordinates ever leave the component (assert emitted payload ∈ [0,1]). — `closed` emit asserts every coordinate ∈ [0,1] incl. drag/letterbox paths; 13 canvas tests green.
+- [x] Geometry unit tests cover round-trip, coverage, min-area, edge-inclusive containment. — `roi-geometry.spec.js` (10 tests): round-trip ±1e-9, clamp, unit-square/half/triangle coverage, 500px² floor, boundary+vertex containment matching `roi.py`.
 
-**Gate:** frontend loop. **Commit:** `feat(frontend): roi canvas draws on a frozen snapshot in normalised space`
+**Gate:** frontend loop (119 tests). **Commit:** `0ae93a9 feat(frontend): roi canvas draws on a frozen snapshot in normalised space`
 
 ## Task 4.15 — ZoneList + coverage + class filter + save/cancel
 
@@ -525,10 +525,10 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - Resolution-change sanity: opening the editor at 640×360 vs 1920×1080 snapshot emits identical normalised points for the same clicks (component-level companion to 4.5).
 
 **Acceptance:**
-- [ ] Save/Cancel semantics hold (no destructive-on-blur).
-- [ ] Coverage + class filter visible per zone without entering a mode.
+- [x] Save/Cancel semantics hold (no destructive-on-blur). — dirty marker keyed on JSON compare of name/points/classes; Cancel + canvas Esc restore `lastSaved`; save guards dirty/name/≥3 points; sent values win over the (stale) mock response; 14 editor tests green.
+- [x] Coverage + class filter visible per zone without entering a mode. — `ZoneList` always renders per-zone `coveragePct` (+ >80% alert); `ClassFilter` checkboxes beside the canvas; `canEdit` gates duplicate/delete/save/cancel for viewers.
 
-**Checkpoint C (with 4.14):** ROI editor complete — gate demo candidate. **Gate:** frontend loop. **Commit:** `feat(frontend): zone list, coverage, and explicit save/cancel for roi`
+**Checkpoint C (with 4.14):** ROI editor complete — gate demo candidate. **Gate:** frontend loop (133 tests, 16 files). **Commit:** `feat(frontend): zone list, coverage, and explicit save/cancel for roi`
 
 ## Task 4.16 — Event log + detail
 

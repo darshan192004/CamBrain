@@ -1,16 +1,16 @@
 <script setup>
 // /cameras/:id — the camera detail screen (design §3). Loads the camera,
-// its ROIs and its rules once on mount; the rules list mutates through
-// the API client and asks this view to refetch. The ROI canvas draws on a
-// frozen snapshot in normalised space (task 4.14); zone list + save land
-// in 4.15. 404 (stale link, deleted camera) renders as an inline message,
-// not a crash.
+// its ROIs and its rules once on mount; the rules list and the ROI editor
+// mutate through the API client and ask this view to refetch. The ROI
+// editor draws on a frozen snapshot in normalised space (tasks 4.14/4.15).
+// 404 (stale link, deleted camera) renders as an inline message, not a
+// crash.
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import { get } from "../api/client.js";
 import CameraCard from "./CameraCard.vue";
-import RoiCanvas from "../roi/RoiCanvas.vue";
+import RoiEditor from "../roi/RoiEditor.vue";
 import RulesList from "../rules/RulesList.vue";
 
 const props = defineProps({
@@ -94,10 +94,12 @@ onMounted(load);
         <h2 class="text-sm font-semibold text-text-primary">
           Regions of interest ({{ rois.length }})
         </h2>
-        <RoiCanvas
+        <RoiEditor
           :camera-id="camera.id"
+          :rois="rois"
           :frame-width="camera.frame_width ?? 640"
           :frame-height="camera.frame_height ?? 360"
+          @changed="load"
         />
       </section>
 

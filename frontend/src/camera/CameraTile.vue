@@ -35,6 +35,11 @@ const offline = computed(
 const state = ref(offline.value ? "offline" : "starting");
 const reason = ref("");
 const frameUrl = ref(null);
+const resolution = computed(() => {
+  const w = props.camera.frame_width;
+  const h = props.camera.frame_height;
+  return w && h ? `${w}×${h}` : "—×—";
+});
 
 let controller = null;
 
@@ -144,5 +149,19 @@ onBeforeUnmount(() => {
         {{ STATUS_TEXT[state] }}
       </span>
     </figcaption>
+    <footer
+      class="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs"
+    >
+      <RouterLink
+        data-testid="tile-open"
+        :to="{ name: 'camera-detail', params: { id: props.camera.id } }"
+        class="text-accent hover:underline"
+      >
+        Open ▸ ROI · rules
+      </RouterLink>
+      <span data-testid="tile-resolution" class="font-mono text-text-secondary">
+        {{ resolution }}
+      </span>
+    </footer>
   </figure>
 </template>

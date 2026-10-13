@@ -465,10 +465,13 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - payload shape equals the API.md request example (deep-equal on a filled form).
 - windows editor: add/remove rows; a `22:00 → 06:00` row saves unchanged (midnight wrap survives round-trip).
 - RulesList: per-camera rules with severity badge; create/patch/delete happy paths (mocked client); soft delete note ("rule kept for history").
+- Tile footer (adopted friend's look): `Open ▸ ROI · rules` link to the detail route + `frame_width×frame_height` readout with `—×—` fallback.
 
 **Acceptance:**
-- [ ] A rule can be created end-to-end against the real API contract (mocked fetch, payload asserted).
-- [ ] Default classes = `["person"]` (design §5.7 — noise control by default).
+- [x] A rule can be created end-to-end against the real API contract (mocked fetch, payload asserted). — `RulesList` create test asserts URL/method/body of `POST /cameras/1/rules` with the RuleForm payload; 28 new tests, 89 total green.
+- [x] Default classes = `["person"]` (design §5.7 — noise control by default). — empty-form checkbox default test.
+
+**Look note:** page content adopts the friend branch's (`phase-4-implementation`, reference-only) detail structure — settings card + rules list with severity badges, tile footer links — while keeping this branch's tested shell, sidebar and API client. ROI canvas stays task 4.14 (placeholder slot reserved on the detail page).
 
 **Gate:** frontend loop. **Commit:** `feat(frontend): camera detail and per-camera rules editor`
 

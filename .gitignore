@@ -9,7 +9,8 @@ models/*.pt
 *.db
 *.db-wal
 *.db-shm
-data/
+# root-level runtime dir only — do NOT swallow source dirs like frontend/src/data/
+/data/
 clips/
 logs/
 keys/

@@ -9,6 +9,7 @@ import { ref } from "vue";
 import { del, patch, post } from "../api/client.js";
 import RoleGate from "../auth/RoleGate.vue";
 import { useAuthStore } from "../stores/auth.js";
+import RuleDiagnostics from "./RuleDiagnostics.vue";
 import RuleForm from "./RuleForm.vue";
 
 const props = defineProps({
@@ -30,6 +31,7 @@ const emit = defineEmits(["changed"]);
 useAuthStore();
 const editing = ref(null);
 const confirming = ref(null);
+const testing = ref(null);
 const error = ref("");
 const busy = ref(false);
 
@@ -150,6 +152,14 @@ const SEVERITY_STYLE = {
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              :data-testid="`rule-test-${rule.id}`"
+              class="rounded-md border border-border px-3 py-1 text-xs text-text-primary hover:bg-bg-raised"
+              @click="testing = testing === rule.id ? null : rule.id"
+            >
+              Test
+            </button>
+            <button
+              type="button"
               :data-testid="`rule-edit-${rule.id}`"
               class="rounded-md border border-border px-3 py-1 text-xs text-text-primary hover:bg-bg-raised"
               @click="editing = { mode: 'edit', rule }"
@@ -165,6 +175,11 @@ const SEVERITY_STYLE = {
               Delete
             </button>
           </div>
+          <RuleDiagnostics
+            v-if="testing === rule.id"
+            :rule-id="rule.id"
+            :camera-id="props.cameraId"
+          />
           <p
             v-if="confirming?.id === rule.id"
             class="mt-2 rounded-md border border-border p-2 text-xs text-text-secondary"

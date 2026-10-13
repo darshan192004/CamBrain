@@ -1,15 +1,16 @@
 <script setup>
 // /cameras/:id — the camera detail screen (design §3). Loads the camera,
 // its ROIs and its rules once on mount; the rules list mutates through
-// the API client and asks this view to refetch. The ROI canvas itself
-// lands in task 4.14 — this view reserves the slot so the layout is
-// stable. 404 (stale link, deleted camera) renders as an inline message,
+// the API client and asks this view to refetch. The ROI canvas draws on a
+// frozen snapshot in normalised space (task 4.14); zone list + save land
+// in 4.15. 404 (stale link, deleted camera) renders as an inline message,
 // not a crash.
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import { get } from "../api/client.js";
 import CameraCard from "./CameraCard.vue";
+import RoiCanvas from "../roi/RoiCanvas.vue";
 import RulesList from "../rules/RulesList.vue";
 
 const props = defineProps({
@@ -89,12 +90,15 @@ onMounted(load);
 
       <CameraCard :camera="camera" @saved="load" @deleted="goBack" />
 
-      <section
-        aria-label="Regions of interest"
-        class="rounded-[10px] border border-dashed border-border p-4 text-sm text-text-secondary"
-      >
-        Regions of interest ({{ rois.length }}) — the drawing canvas arrives in
-        task 4.14.
+      <section aria-label="Regions of interest" class="grid gap-3">
+        <h2 class="text-sm font-semibold text-text-primary">
+          Regions of interest ({{ rois.length }})
+        </h2>
+        <RoiCanvas
+          :camera-id="camera.id"
+          :frame-width="camera.frame_width ?? 640"
+          :frame-height="camera.frame_height ?? 360"
+        />
       </section>
 
       <RulesList

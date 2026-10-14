@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
+
+from app.core.crypto import decrypt
+from app.db.models.site import Site
 
 
 def test_get_settings(client: TestClient, admin_headers: dict[str, str]) -> None:
@@ -58,10 +63,112 @@ def test_notifiers_crud(client: TestClient, admin_headers: dict[str, str]) -> No
     assert client.get("/api/v1/notifiers", headers=admin_headers).json() == []
 
 
-def test_notifier_test_is_501(client: TestClient, admin_headers: dict[str, str]) -> None:
-    """Transport is Phase 4; the route exists and returns an explicit 501."""
-    resp = client.post("/api/v1/notifiers/test", headers=admin_headers)
-    assert resp.status_code == 501
+def test_notifier_token_is_encrypted_and_masked(
+    client: TestClient, admin_headers: dict[str, str], db_session, seeded
+) -> None:
+    res = client.post(
+        "/api/v1/notifiers",
+        json={
+            "kind": "telegram",
+            "enabled": True,
+            "config": {"chat_id": "42", "bot_token": "SECRET-TOKEN"},
+        },
+        headers=admin_headers,
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert '"bot_token"' not in json.dumps(body)
+    assert "SECRET-TOKEN" not in json.dumps(body)
+    assert body["has_token"] is True
+
+    got = client.get("/api/v1/notifiers", headers=admin_headers)
+    assert "SECRET-TOKEN" not in got.text
+    assert '"bot_token"' not in got.text
+    assert got.json()[0]["has_token"] is True
+
+    db_session.expire_all()
+    site, _admin, _viewer = seeded
+    raw = db_session.get(Site, site.id).notifier_config
+    assert raw[0]["config"]["bot_token_enc"] != "SECRET-TOKEN"
+    assert decrypt(raw[0]["config"]["bot_token_enc"]) == "SECRET-TOKEN"
+
+
+def test_notifier_patch_without_token_keeps_existing(
+    client: TestClient, admin_headers: dict[str, str], db_session, seeded
+) -> None:
+    client.post(
+        "/api/v1/notifiers",
+        json={
+            "kind": "telegram",
+            "enabled": True,
+            "config": {"chat_id": "42", "bot_token": "SECRET-TOKEN"},
+        },
+        headers=admin_headers,
+    )
+    res = client.patch(
+        "/api/v1/notifiers/0",
+        json={"enabled": False, "config": {"chat_id": "43"}},
+        headers=admin_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["has_token"] is True, "a config without a token must not wipe the old one"
+
+    db_session.expire_all()
+    site, _admin, _viewer = seeded
+    raw = db_session.get(Site, site.id).notifier_config
+    assert decrypt(raw[0]["config"]["bot_token_enc"]) == "SECRET-TOKEN"
+    assert raw[0]["config"]["chat_id"] == "43"
+
+
+def test_notifier_test_endpoint_sends_real_message(
+    client: TestClient, admin_headers: dict[str, str], monkeypatch
+) -> None:
+    from app.api.routers import settings as settings_router
+
+    class FakeNotifier:
+        async def send(self, event):  # noqa: ANN001, ARG002
+            return None
+
+        async def test_message(self):
+            return {"ok": True, "result": {"message_id": 7}}
+
+    monkeypatch.setattr(settings_router, "_build_notifier", lambda _entry: FakeNotifier())
+    client.post(
+        "/api/v1/notifiers",
+        json={
+            "kind": "telegram",
+            "enabled": True,
+            "config": {"chat_id": "42", "bot_token": "T"},
+        },
+        headers=admin_headers,
+    )
+    res = client.post("/api/v1/notifiers/test", headers=admin_headers)
+    assert res.status_code == 200 and res.json()["ok"] is True
+    assert res.json()["response"] == {"ok": True, "result": {"message_id": 7}}
+
+
+def test_notifier_test_endpoint_reports_failure(
+    client: TestClient, admin_headers: dict[str, str], monkeypatch
+) -> None:
+    from app.api.routers import settings as settings_router
+    from app.services.alerts.telegram import TelegramError
+
+    def boom(_entry):
+        raise TelegramError("telegram sendMessage rejected: chat not found")
+
+    monkeypatch.setattr(settings_router, "_build_notifier", boom)
+    client.post(
+        "/api/v1/notifiers",
+        json={
+            "kind": "telegram",
+            "enabled": True,
+            "config": {"chat_id": "42", "bot_token": "T"},
+        },
+        headers=admin_headers,
+    )
+    res = client.post("/api/v1/notifiers/test", headers=admin_headers)
+    assert res.status_code == 200 and res.json()["ok"] is False
+    assert "chat not found" in res.json()["error"]
 
 
 def test_viewer_cannot_create_notifier(client: TestClient, viewer_headers: dict[str, str]) -> None:

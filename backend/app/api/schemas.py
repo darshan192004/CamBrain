@@ -504,6 +504,7 @@ class NotifierOut(BaseModel):
     kind: str
     enabled: bool
     config: dict[str, object]
+    has_token: bool = False
 
 
 class NotifierCreate(BaseModel):

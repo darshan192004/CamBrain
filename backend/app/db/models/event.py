@@ -55,6 +55,7 @@ class Event(Base):
     delivery_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_delivery_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     acknowledged_by: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True

@@ -47,13 +47,13 @@ export function createAppRouter() {
         {
           path: "events",
           name: "events",
-          component: () => import("./views/PlaceholderView.vue"),
+          component: () => import("./views/EventsView.vue"),
           meta: { title: "Events" },
         },
         {
           path: "events/:id",
           name: "event-detail",
-          component: () => import("./views/PlaceholderView.vue"),
+          component: () => import("./views/EventDetailView.vue"),
           props: true,
           meta: { title: "Event" },
         },

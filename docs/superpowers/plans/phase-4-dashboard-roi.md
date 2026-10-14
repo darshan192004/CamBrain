@@ -543,10 +543,10 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 - empty state copy (designed state — no events until Phase 5).
 
 **Acceptance:**
-- [ ] Every filter maps to its documented query param; overlay coordinates scale correctly at two frame sizes.
-- [ ] Cross-check: `thumbnail_url`/`clip_url` used verbatim (opaque URLs — client never builds paths).
+- [x] Every filter maps to its documented query param; overlay coordinates scale correctly at two frame sizes. — exact-string query assertion (camera_id, severity, from, to, acknowledged, q, limit=20, offset, sort=-started_at); overlay asserted at 640×360 (25% boxes) and 1920×1080 (8.333% boxes).
+- [x] Cross-check: `thumbnail_url`/`clip_url` used verbatim (opaque URLs — client never builds paths). — stills fetched through the authenticated client from the verbatim URL (`/api/v1` base stripped once, path never built); `<video :src="clip_url">` verbatim.
 
-**Gate:** frontend loop. **Commit:** `feat(frontend): event log with filters, bulk acknowledge, and detection overlay`
+**Gate:** frontend loop (148 tests, 18 files). **Commit:** `feat(frontend): event log with filters, bulk acknowledge, and detection overlay`
 
 ## Task 4.17 — Settings pages
 

@@ -41,6 +41,18 @@ def _reset_login_tracker() -> Iterator[None]:
     login_tracker.reset()
 
 
+@pytest.fixture(autouse=True)
+def _reset_alert_hub() -> Iterator[None]:
+    """The hub is process-wide; clear subscribers between tests."""
+    from app.services.alerts.hub import get_alert_hub
+
+    hub = get_alert_hub()
+    with hub._lock:  # noqa: SLF001 - test-only reset
+        hub._subs.clear()
+        hub._loop = None
+    yield
+
+
 @pytest.fixture
 def clip_path() -> Path:
     """Path to the generated motion clip �?" the default input for stream tests."""

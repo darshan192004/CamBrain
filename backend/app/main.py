@@ -15,6 +15,7 @@ from app.api.routers.rules import router as rules_router
 from app.api.routers.settings import router as settings_router
 from app.api.routers.system import router as system_router
 from app.api.routers.users import router as users_router
+from app.api.ws import router as ws_router
 from app.core.config import settings
 
 API_PREFIX = "/api/v1"
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router, prefix=API_PREFIX)
     app.include_router(settings_router, prefix=API_PREFIX)
     app.include_router(system_router, prefix=API_PREFIX)
+    app.include_router(ws_router, prefix=API_PREFIX)
     return app
 
 

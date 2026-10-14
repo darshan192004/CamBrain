@@ -4,7 +4,7 @@
 # --- Core engine ---
 av>=13.0.0                      # RTSP decode. BSD. Bundles its own FFmpeg.
 onnxruntime>=1.19.0            # CPU inference. MIT.
-numpy>=2.0.0                   # MIT.
+numpy>=2.5.4                   # MIT.
 opencv-python-headless>=4.10.0 # MOG2 background subtraction. Apache-2.0.
                                 # headless build: no Qt, smaller on the box.
 

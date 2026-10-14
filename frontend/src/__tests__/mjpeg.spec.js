@@ -153,6 +153,41 @@ describe("openMjpeg (plan D3 byte vectors)", () => {
     expect(onFrame).not.toHaveBeenCalled();
   });
 
+  it("keeps a replaced frame URL alive until the grace period passes", async () => {
+    vi.useFakeTimers();
+    try {
+      const stream = openStream();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => stream.response),
+      );
+      const onFrame = vi.fn();
+
+      openMjpeg("u", {
+        onFrame,
+        onError: vi.fn(),
+        signal: new AbortController().signal,
+      });
+
+      stream.push(framePart(JPEG));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onFrame).toHaveBeenCalledTimes(1);
+
+      stream.push(framePart(JPEG));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onFrame).toHaveBeenCalledTimes(2);
+      // Frame 1 was replaced by frame 2: its URL must stay fetchable for
+      // the <img>, otherwise the load dies with ERR_BLOB_OUT_OF_MEMORY.
+      expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:frame-1");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stops emitting after AbortController aborts", async () => {
     const stream = openStream();
     vi.stubGlobal(

@@ -4,8 +4,10 @@
  * The access token lives in memory and rides `Authorization: Bearer` — an
  * `<img src>` cannot send it — and `AbortController` tears a tile down.
  * Frames are handed to `onFrame` as object URLs; the previous URL is
- * revoked as soon as a new frame replaces it, and the last one is revoked
- * when the stream stops. The parser buffers chunks and only emits a frame
+ * revoked only after a grace period, because revoking while the `<img>` is
+ * still fetching the frame fails the load with `ERR_BLOB_OUT_OF_MEMORY`
+ * and the tile would never render. The last frame is revoked when the
+ * stream stops. The parser buffers chunks and only emits a frame
  * once `Content-Length` bytes have arrived, so a boundary or JPEG split
  * across chunks can never surface a truncated image.
  * @module api/mjpeg
@@ -16,6 +18,10 @@ import { getAccessToken } from "./token.js";
 
 const BOUNDARY = bytes("--frame\r\n");
 const HEADER_END = Uint8Array.from([13, 10, 13, 10]);
+// How long a replaced frame URL stays fetchable (ms): long enough for the
+// consumer's <img> to start (and finish) loading, short enough that a
+// stalled 15fps stream cannot accumulate blob URLs.
+const REVOKE_GRACE_MS = 1000;
 
 /**
  * ASCII text as bytes (headers and boundaries are ASCII by definition).
@@ -98,6 +104,22 @@ export function openMjpeg(url, { onFrame, onError, signal }) {
   let scan = 0;
   let stopped = false;
   let frameUrl = null;
+  /** @type {Map<string, ReturnType<typeof setTimeout>>} pending revokes */
+  const pendingRevokes = new Map();
+
+  /**
+   * Schedule `url` for revocation after the grace period; a second revoke
+   * at teardown is a harmless no-op in the browser.
+   * @param {string} url object URL of a replaced frame
+   * @returns {void}
+   */
+  function revokeSoon(url) {
+    const timer = setTimeout(() => {
+      pendingRevokes.delete(url);
+      URL.revokeObjectURL(url);
+    }, REVOKE_GRACE_MS);
+    pendingRevokes.set(url, timer);
+  }
 
   const stop = () => {
     stopped = true;
@@ -105,17 +127,23 @@ export function openMjpeg(url, { onFrame, onError, signal }) {
       URL.revokeObjectURL(frameUrl);
       frameUrl = null;
     }
+    for (const [url, timer] of pendingRevokes) {
+      clearTimeout(timer);
+      URL.revokeObjectURL(url);
+    }
+    pendingRevokes.clear();
   };
   signal.addEventListener("abort", stop, { once: true });
 
   /**
-   * Publish one JPEG as an object URL, revoking the previous frame.
+   * Publish one JPEG as an object URL; the URL it replaces starts its
+   * grace period so the consumer's <img> can still fetch it.
    * @param {Uint8Array} jpeg complete frame bytes
    * @returns {void}
    */
   function emit(jpeg) {
     if (frameUrl) {
-      URL.revokeObjectURL(frameUrl);
+      revokeSoon(frameUrl);
     }
     frameUrl = URL.createObjectURL(new Blob([jpeg], { type: "image/jpeg" }));
     onFrame(frameUrl);

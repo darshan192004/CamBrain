@@ -110,7 +110,7 @@ function reset() {
     <button
       type="button"
       data-testid="filter-apply"
-      class="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+      class="rounded-md bg-accent-fill px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-fill-hover"
       @click="apply"
     >
       Apply

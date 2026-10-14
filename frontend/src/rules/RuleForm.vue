@@ -408,7 +408,7 @@ function submit() {
       <button
         type="submit"
         data-testid="rule-submit"
-        class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+        class="rounded-md bg-accent-fill px-4 py-2 text-sm font-medium text-white hover:bg-accent-fill-hover"
       >
         Save rule
       </button>

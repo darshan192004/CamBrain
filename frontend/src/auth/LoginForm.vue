@@ -93,7 +93,7 @@ async function submit() {
       </p>
 
       <button
-        class="mt-6 w-full rounded-[var(--radius-control)] bg-accent px-4 py-2 text-sm font-medium text-white transition-colors duration-[var(--dur-base)] hover:bg-accent-hover disabled:opacity-50"
+        class="mt-6 w-full rounded-[var(--radius-control)] bg-accent-fill px-4 py-2 text-sm font-medium text-white transition-colors duration-[var(--dur-base)] hover:bg-accent-fill-hover disabled:opacity-50"
         type="submit"
         :disabled="busy"
       >

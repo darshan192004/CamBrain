@@ -92,7 +92,7 @@ const SEVERITY_STYLE = {
         <button
           type="button"
           data-testid="new-rule"
-          class="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+          class="rounded-md bg-accent-fill px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-fill-hover"
           @click="editing = { mode: 'create' }"
         >
           New rule

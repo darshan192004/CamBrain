@@ -53,7 +53,7 @@ const emit = defineEmits(["toggle", "bulk-ack"]);
         type="button"
         data-testid="bulk-ack"
         :disabled="selected.length === 0"
-        class="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+        class="rounded-md bg-accent-fill px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-fill-hover disabled:opacity-50"
         @click="emit('bulk-ack')"
       >
         Acknowledge {{ selected.length }} selected

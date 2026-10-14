@@ -133,7 +133,7 @@ onMounted(async () => {
         type="button"
         data-testid="create-user"
         :disabled="!username.trim() || password.length < 8"
-        class="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+        class="rounded-md bg-accent-fill px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-fill-hover disabled:cursor-not-allowed disabled:opacity-50"
         @click="create"
       >
         Create user
@@ -171,7 +171,7 @@ onMounted(async () => {
             <button
               type="button"
               :data-testid="`confirm-delete-user-${user.id}`"
-              class="rounded-md bg-alert-critical px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+              class="rounded-md bg-alert-critical-fill px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
               @click="remove(user.id)"
             >
               Confirm delete

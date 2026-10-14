@@ -255,7 +255,7 @@ async function save() {
         <button
           type="submit"
           data-testid="dialog-submit"
-          class="rounded-[var(--radius-control)] bg-accent px-4 py-2 text-sm font-medium text-white transition-colors duration-[var(--dur-base)] hover:bg-accent-hover disabled:opacity-50"
+          class="rounded-[var(--radius-control)] bg-accent-fill px-4 py-2 text-sm font-medium text-white transition-colors duration-[var(--dur-base)] hover:bg-accent-fill-hover disabled:opacity-50"
           :disabled="busy"
         >
           {{ busy ? "Saving…" : "Add camera" }}

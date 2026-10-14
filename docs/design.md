@@ -69,19 +69,24 @@ Operators run this at night, often in a dim room, sometimes on a cheap monitor w
 |---|---|---|
 | `--bg-base` | `#0B0D10` | App background |
 | `--bg-surface` | `#14181D` | Cards, panels |
-| `--bg-raised` | `#1C2126` | Hover, elevated elements |
-| `--border` | `#252B32` | Default borders |
+| `--bg-raised` | `#191E23` | Hover, elevated elements |
+| `--border` | `#252B32` | Default borders (decorative — inputs are identified by label, value, and focus ring) |
 | `--text-primary` | `#E8EBEE` | Body text |
 | `--text-secondary` | `#9BA5AF` | Labels, metadata |
-| `--text-muted` | `#5F6873` | Disabled, hints |
-| `--accent` | `#3B82F6` | Primary action, focus ring |
-| `--accent-hover` | `#2F6FD0` | — |
-| `--alert-critical` | `#E5484D` | Confirmed intrusion, emergency |
+| `--text-muted` | `#7E8792` | Disabled, hints |
+| `--accent` | `#3B82F6` | Links, focus ring (text-on-dark ≥ 4.5:1) |
+| `--accent-hover` | `#2F6FD0` | Link hover |
+| `--accent-fill` | `#2563EB` | Solid primary button (white text ≥ 4.5:1) |
+| `--accent-fill-hover` | `#1D4ED8` | Solid primary button hover |
+| `--alert-critical` | `#EA595E` | Confirmed intrusion, emergency |
+| `--alert-critical-fill` | `#C4383D` | Destructive confirm button (white text ≥ 4.5:1) |
 | `--alert-warning` | `#F5A524` | Suspicious, degraded camera |
 | `--alert-success` | `#30A46C` | Healthy, connected |
 | `--roi-fill` | `#3B82F660` | ROI polygon fill |
 | `--roi-stroke` | `#3B82F6` | ROI polygon border |
 | `--detect-box` | `#30A46C` | Detection bounding box |
+
+**Contrast note (WCAG 2.1 AA, audited in plan 4.18):** interactive accent and text roles are split because one blue cannot do both on a dark ground — the lightness that lets white text reach 4.5:1 on a fill makes the same colour fail as text on `#0B0D10`, and vice versa. `--accent` serves text/rings, the `*-fill` tokens serve white-on-colour buttons. `bg-raised`, `text-muted`, and `alert-critical` were nudged from their original values until every real pair cleared 4.5:1 (the audit is enforced by `frontend/src/__tests__/a11y.spec.js`).
 
 **Colour is never the only signal.** Detection state also carries a text label; camera health carries an icon and a word. Roughly 1 in 12 men has a red-green deficiency, and this audience includes shop owners who will hit exactly that wall.
 

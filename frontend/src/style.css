@@ -4,18 +4,25 @@
    to them (Global Constraints: no hardcoded hex in components). */
 @import "tailwindcss";
 
-/* Design §2 palette — dark by default. Exact token names from design.md. */
+/* Design §2 palette — dark by default. Exact token names from design.md.
+   Values audited against WCAG 2.1 AA (plan 4.18): bg-raised, text-muted,
+   and alert-critical were nudged so every real text pair clears 4.5:1;
+   the *-fill tokens carry white button text at 4.5:1+ where the lighter
+   interactive accent could not (white on #3B82F6 was 3.68). */
 :root {
   --bg-base: #0b0d10;
   --bg-surface: #14181d;
-  --bg-raised: #1c2126;
+  --bg-raised: #191e23;
   --border: #252b32;
   --text-primary: #e8ebee;
   --text-secondary: #9ba5af;
-  --text-muted: #5f6873;
+  --text-muted: #7e8792;
   --accent: #3b82f6;
   --accent-hover: #2f6fd0;
-  --alert-critical: #e5484d;
+  --accent-fill: #2563eb;
+  --accent-fill-hover: #1d4ed8;
+  --alert-critical: #ea595e;
+  --alert-critical-fill: #c4383d;
   --alert-warning: #f5a524;
   --alert-success: #30a46c;
   --roi-fill: #3b82f660;
@@ -49,7 +56,10 @@
   --color-text-muted: var(--text-muted);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-fill-hover: var(--accent-fill-hover);
   --color-alert-critical: var(--alert-critical);
+  --color-alert-critical-fill: var(--alert-critical-fill);
   --color-alert-warning: var(--alert-warning);
   --color-alert-success: var(--alert-success);
   --color-roi-fill: var(--roi-fill);
@@ -66,6 +76,14 @@
   --radius-xl: var(--radius-card);
 
   --ease-snappy: var(--ease);
+}
+
+/* Design §11: keyboard focus is always visible — the accent ring, 2px with
+   a 2px offset, on every interactive element. :where() keeps specificity at
+   zero so component-level focus styles (VertexHandle) still win. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Design §1: honour reduced motion by collapsing every transition and

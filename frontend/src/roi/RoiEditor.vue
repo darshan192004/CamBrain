@@ -237,7 +237,7 @@ function cancel() {
           type="button"
           data-testid="roi-save"
           :disabled="!dirty || saving"
-          class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+          class="rounded-md bg-accent-fill px-4 py-2 text-sm font-medium text-white hover:bg-accent-fill-hover disabled:opacity-50"
           @click="save"
         >
           Save zone

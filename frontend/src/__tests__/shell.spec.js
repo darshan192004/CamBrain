@@ -185,6 +185,25 @@ describe("AppShell", () => {
     expect(wrapper.findAll('[data-testid="live-region"]')).toHaveLength(1);
     wrapper.unmount();
   });
+
+  it("renders the event ticker inside the live region (4.18)", async () => {
+    const router = createAppRouter();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    setTokens(pair);
+    vi.stubGlobal("fetch", shellFetch());
+
+    const wrapper = mount(App, { global: { plugins: [pinia, router] } });
+    await router.push("/cameras");
+    await vi.waitFor(() =>
+      expect(
+        wrapper
+          .find('[data-testid="live-region"] [data-testid="event-ticker"]')
+          .exists(),
+      ).toBe(true),
+    );
+    wrapper.unmount();
+  });
 });
 
 describe("acceptance", () => {

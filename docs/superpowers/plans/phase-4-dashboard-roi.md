@@ -271,16 +271,20 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 
 | Gate step | Evidence | Result |
 |---|---|---|
-| ruff check / format --check backend | | |
-| mypy backend/app | | |
-| backend default suite | | |
-| backend slow | | |
-| backend rtsp | | |
-| frontend lint / format:check | | |
-| frontend tests | | |
-| frontend build | | |
-| `git status --porcelain` | | |
-| commits | task → SHA list | |
+| ruff check / format --check backend | `115 files already formatted` · `All checks passed!` | PASS |
+| mypy backend/app | `Success: no issues found in 64 source files` | PASS |
+| backend default suite | `276 passed, 1 skipped, 5 deselected` — `pytest -m "not rtsp and not slow" --ignore=backend/tests/rtsp` (165.84s) | PASS |
+| backend slow | `4 passed` — `pytest -m slow` (104.79s) | PASS |
+| backend rtsp | `7 passed` — `pytest -m rtsp` (110.56s) | PASS |
+| frontend lint / format:check | eslint clean · `All matched files use Prettier code style!` | PASS |
+| frontend tests | `Test Files 21 passed (21)` · `Tests 163 passed (163)` (vitest 5.0.3, jsdom) | PASS |
+| frontend build | `✓ built in 1.26s` — 15 output chunks, no warnings | PASS |
+| `git status --porcelain` | only `.tmp/`, `.playwright-mcp/` (never staged) and the ledger edits staged into the docs commit | PASS |
+| commits | 22 commits `34523df..304c490` (`git log main..HEAD`); key: 4.16=`d819d04`, 4.17=`f2bfe5d`, a11y sweep=`304c490` | — |
+| living docs (gate items 3–4) | tasks.md Phase 4 all ticked incl. the two D5 rows; API.md amendments 1–3 verified against shipped code (`image/jpeg`+`no-store` in `cameras.py:221`, `DEFAULT_PER_IP = 12` → `503`, thumbnail `FileResponse` in `events.py:194`); `test_api_system.py::test_openapi_matches_spec` → 1 passed | PASS |
+| a11y sweep (task step 1) | `a11y.spec.js` (focus rule, 22 text pairs ≥4.5:1, 3 UI pairs ≥3:1) + `shell.spec` ticker-in-live-region; WCAG fixes in `304c490` (evidence in its commit body) | PASS |
+| human gate walkthrough (gate item 5) | pending — 4.18f | — |
+| PR-Agent review → merge → branches deleted (gate item 6) | pending — 4.18e | — |
 
 
 ---

@@ -7,15 +7,17 @@ the Tauri shell and the installer to poll; it needs no auth.
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import ClaimsDep, DbSessionDep, require_role_dep
 from app.api.schemas import HealthOut
 from app.core.config import settings
 from app.db.models.camera import Camera
+from app.db.models.event import Event
 from app.db.models.site import Site
 from app.services.stream.stats import StreamStats, get_stream_stats
 
@@ -47,6 +49,22 @@ def status_route(claims: ClaimsDep, db: DbSessionDep, stats: StreamStatsDep) -> 
     an absent number reads as "unknown", a zero reads as "measured none".
     """
     site_id = int(claims["site_id"])
+    today = (
+        datetime.now(tz=UTC).replace(tzinfo=None).replace(hour=0, minute=0, second=0, microsecond=0)
+    )
+    events_today = db.execute(
+        select(func.count(Event.id)).where(Event.site_id == site_id, Event.started_at >= today)
+    ).scalar_one()
+    alerts_sent = db.execute(
+        select(func.count(Event.id)).where(
+            Event.site_id == site_id, Event.started_at >= today, Event.delivery_status == "sent"
+        )
+    ).scalar_one()
+    alerts_failed = db.execute(
+        select(func.count(Event.id)).where(
+            Event.site_id == site_id, Event.started_at >= today, Event.delivery_status == "failed"
+        )
+    ).scalar_one()
     cameras = (
         db.execute(select(Camera).where(Camera.site_id == site_id).order_by(Camera.id))
         .scalars()
@@ -80,6 +98,9 @@ def status_route(claims: ClaimsDep, db: DbSessionDep, stats: StreamStatsDep) -> 
         "stats": {
             "cameras_total": camera_count,
             "retention_days": site.retention_days if site else None,
+            "events_today": events_today,
+            "alerts_sent": alerts_sent,
+            "alerts_failed": alerts_failed,
         },
     }
 

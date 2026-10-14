@@ -2,9 +2,8 @@
  * Application router factory: the eight paths of design §3. `/login` is
  * public and renders bare; every other path nests inside the AppShell
  * layout (top bar, sidebar, status bar) — task 4.9. `/settings/*` requires
- * admin; content screens are placeholders until tasks 4.10–4.17 replace
- * them. Tests build their own instance so navigations never leak between
- * specs.
+ * admin; content screens land in tasks 4.10–4.17. Tests build their own
+ * instance so navigations never leak between specs.
  * @module router
  */
 
@@ -60,13 +59,13 @@ export function createAppRouter() {
         {
           path: "settings/users",
           name: "users",
-          component: () => import("./views/PlaceholderView.vue"),
+          component: () => import("./settings/UsersView.vue"),
           meta: { title: "Users", roles: ["admin"] },
         },
         {
           path: "settings/system",
           name: "system",
-          component: () => import("./views/PlaceholderView.vue"),
+          component: () => import("./settings/SystemView.vue"),
           meta: { title: "System", roles: ["admin"] },
         },
       ],

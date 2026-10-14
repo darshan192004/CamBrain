@@ -553,14 +553,14 @@ async def mjpeg_parts(source, *, encoder=encode_jpeg):
 **New:** `src/settings/UsersView.vue`, `SystemView.vue`, tests.
 
 **Tests:**
-- Users: list from `GET /users`; create form (username/email/role) → `POST`; delete confirm → `DELETE`; `409` last-admin → inline conflict message (API.md); role select admin/viewer only; viewer never reaches the view (guard already proven in 4.8 — assert nav hidden here).
+- Users: list from `GET /users`; create form (username/password/role — `UserCreate` has no email field) → `POST`; delete confirm → `DELETE`; `409` last-admin → inline conflict message (API.md); role select admin/viewer only; viewer never reaches the view (guard already proven in 4.8 — assert nav hidden here).
 - System: renders `/system/status` fixture — tier, hardware rows, model, disk %, per-camera stats; `GET /system/health` unauthenticated ping shown as service status.
 - Notifiers UI **not** built (Phase 5 — Telegram wiring); System page shows model/tier/storage only.
 
 **Acceptance:**
-- [ ] Both sidebar destinations render real data; last-admin protection is visible in the UI, not just the API.
+- [x] Both sidebar destinations render real data; last-admin protection is visible in the UI, not just the API. — UsersView: `GET /users` list, documented create payload round-trip, two-step inline delete confirm; `409 CONFLICT` ("cannot demote or delete the last remaining admin") rendered in `users-error` with the row kept. SystemView: tier / hardware rows / model / disk % / per-camera stats from the documented fixture, `GET /system/health` ping as service status, live empty `hardware`/`model` stub tolerated as em dashes; viewer nav hidden asserted.
 
-**Gate:** frontend loop. **Commit:** `feat(frontend): users admin and system status pages`
+**Gate:** frontend loop (158 tests, 20 files). **Commit:** `feat(frontend): users admin and system status pages`
 
 ## Task 4.18 — Accessibility pass, full gate, living docs, PR
 

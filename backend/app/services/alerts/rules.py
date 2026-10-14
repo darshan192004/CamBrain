@@ -54,6 +54,7 @@ class RuleConfig:
     active_hours: ActiveHours | None
     roi: RoiConfig | None
     last_fired_at: datetime | None
+    notify: bool = True
 
 
 @dataclass(frozen=True, slots=True)

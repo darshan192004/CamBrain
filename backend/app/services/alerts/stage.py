@@ -21,7 +21,7 @@ from app.services.stream.source import Frame
 
 @dataclass(frozen=True, slots=True)
 class Alert:
-    """A fired rule, ready for Phase 5 to persist and deliver."""
+    """A fired rule, ready to persist, broadcast, and deliver (spec A5.6)."""
 
     rule_id: int
     rule_name: str
@@ -32,6 +32,9 @@ class Alert:
     zone: str | None
     fired_at: datetime
     summary: str
+    camera_id: int
+    bbox: tuple[int, int, int, int]
+    notify: bool
 
 
 AlertSink = Callable[[Alert], Awaitable[None] | None]
@@ -45,6 +48,7 @@ class AlertStage:
         *,
         detector: Detector,
         rules: Sequence[RuleConfig],
+        camera_id: int,
         on_alert: AlertSink,
         engine: RulesEngine | None = None,
         tracker: Tracker | None = None,
@@ -52,6 +56,7 @@ class AlertStage:
     ) -> None:
         self._detector = detector
         self._rules = list(rules)
+        self._camera_id = camera_id
         self._on_alert = on_alert
         self._engine = engine or RulesEngine()
         self._tracker = tracker or Tracker()
@@ -86,6 +91,9 @@ class AlertStage:
                         zone=zone,
                         fired_at=now,
                         summary=f"1 {track.class_name} in {where}",
+                        camera_id=self._camera_id,
+                        bbox=track.bbox,
+                        notify=config.notify,
                     )
                 )
                 if result is not None:

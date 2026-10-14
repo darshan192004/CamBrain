@@ -39,6 +39,7 @@ def rule_config(rule: Rule, roi: Roi | None) -> RuleConfig:
             else None
         ),
         last_fired_at=None,
+        notify=rule.notify,
     )
 
 

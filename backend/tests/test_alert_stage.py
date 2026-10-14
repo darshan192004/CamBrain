@@ -61,6 +61,7 @@ async def test_alert_fires_once_then_cooldown_silences() -> None:
     stage = AlertStage(
         detector=FakeDetector(),
         rules=[rule()],
+        camera_id=1,
         on_alert=alerts.append,
         now_fn=lambda: datetime(2026, 10, 6, 12, 0, tzinfo=ZoneInfo("UTC")),
     )
@@ -83,6 +84,7 @@ async def test_cooldown_rearms_on_a_later_pass() -> None:
     stage = AlertStage(
         detector=FakeDetector(),
         rules=[rule()],
+        camera_id=1,
         on_alert=alerts.append,
         now_fn=lambda: next(it),
     )
@@ -99,7 +101,12 @@ async def test_non_matching_class_never_alerts() -> None:
             return [Detection(class_name="car", confidence=0.9, bbox=(1, 1, 9, 9))]
 
     alerts: list[Alert] = []
-    stage = AlertStage(detector=CarDetector(), rules=[rule()], on_alert=alerts.append)
+    stage = AlertStage(
+        detector=CarDetector(),
+        rules=[rule()],
+        camera_id=1,
+        on_alert=alerts.append,
+    )
     await stage(frame())
     assert alerts == []
 
@@ -113,6 +120,7 @@ async def test_disabled_hours_suppress() -> None:
                 active_hours=ActiveHours(timezone="UTC", windows=(Window(time(22, 0), time(6, 0)),))
             )
         ],
+        camera_id=1,
         on_alert=alerts.append,
         now_fn=lambda: datetime(2026, 10, 6, 12, 0, tzinfo=ZoneInfo("UTC")),
     )
@@ -125,6 +133,7 @@ async def test_multiple_rules_each_get_their_own_cooldown() -> None:
     stage = AlertStage(
         detector=FakeDetector(),
         rules=[rule(rule_id=1, severity="info"), rule(rule_id=2, severity="critical")],
+        camera_id=1,
         on_alert=alerts.append,
         now_fn=lambda: datetime(2026, 10, 6, 12, 0, tzinfo=ZoneInfo("UTC")),
     )
@@ -132,3 +141,19 @@ async def test_multiple_rules_each_get_their_own_cooldown() -> None:
     assert sorted(a.rule_id for a in alerts) == [1, 2]
     await stage(frame(1))
     assert len(alerts) == 2, "per-rule cooldowns are independent"
+
+
+async def test_alert_carries_camera_bbox_and_notify() -> None:
+    """Persistence needs the camera id, pixel box, and notify flag (tasks 4-6)."""
+    alerts: list[Alert] = []
+    stage = AlertStage(
+        detector=FakeDetector(),
+        rules=[rule()],
+        camera_id=7,
+        on_alert=alerts.append,
+        now_fn=lambda: datetime(2026, 10, 6, 12, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    await stage(frame())
+    assert alerts[0].camera_id == 7
+    assert alerts[0].bbox == (10, 10, 50, 120)
+    assert alerts[0].notify is True

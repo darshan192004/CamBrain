@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     refresh_token_ttl_s: int = 604800
     # HS256 signing key. Unset -> derived from the DPAPI master key (SECURITY 4.2).
     jwt_secret: SecretStr | None = None
+    # Telegram Bot API origin; tests (and the gate's capture server) override it.
+    telegram_api_base: str = "https://api.telegram.org"
+    # Phase-5 runtime: pipelines + alert chain. Tests force it off (conftest).
+    runtime_enabled: bool = True
+    model_path: Path = Path(__file__).resolve().parents[3] / "models" / "yolox_nano.onnx"
+    model_input_size: int = 416
 
 
 settings = Settings()

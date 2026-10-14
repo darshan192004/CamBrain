@@ -8,17 +8,24 @@ and a masked placeholder instead.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from dataclasses import asdict
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import ClaimsDep, DbSessionDep, require_role_dep
 from app.api.schemas import CameraCreate, CameraOut, CameraPatch, CameraTestResult
 from app.core.crypto import encrypt
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, StreamError
 from app.db.models.camera import Camera
 from app.db.repositories.cameras import CameraRepository
+from app.services.stream.factory import SourceFactory, get_source_factory
+from app.services.stream.jpeg import encode_jpeg
+from app.services.stream.mjpeg import StreamSlots, get_stream_slots, tracked_parts
+from app.services.stream.probe import capture_frame, classify_code, failure_outcome, probe_source
+from app.services.stream.stats import StreamStats, get_stream_stats
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -26,6 +33,24 @@ _MASK = "••••••••"
 # Authz runs as a dependency, which FastAPI solves before validating the
 # request body — so a viewer's malformed write is a 403, not a 422.
 AdminDep = Annotated[dict[str, Any], Depends(require_role_dep("admin"))]
+SourceFactoryDep = Annotated[SourceFactory, Depends(get_source_factory)]
+StreamSlotsDep = Annotated[StreamSlots, Depends(get_stream_slots)]
+StreamStatsDep = Annotated[StreamStats, Depends(get_stream_stats)]
+
+
+def _error_response(request: Request, status_code: int, code: str, message: str) -> JSONResponse:
+    """Build the standard error envelope for a route-level outcome."""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "field": None,
+                "correlation_id": getattr(request.state, "correlation_id", "unknown"),
+            }
+        },
+    )
 
 
 def _repo(db: Any, claims: dict[str, Any]) -> CameraRepository:
@@ -122,51 +147,125 @@ def delete_camera(camera_id: int, claims: AdminDep, db: DbSessionDep) -> Respons
 
 
 @router.post("/{camera_id}/test", response_model=CameraTestResult)
-async def test_camera(camera_id: int, claims: AdminDep, db: DbSessionDep) -> CameraTestResult:
+async def test_camera(
+    camera_id: int,
+    claims: AdminDep,
+    db: DbSessionDep,
+    factory: SourceFactoryDep,
+) -> CameraTestResult:
     """Probe the RTSP endpoint. Always 200 — a failed probe is data, not an error."""
     camera = _repo(db, claims).get(camera_id)
     if camera is None:
         raise NotFoundError("camera not found")
-    # Phase 4 wires the real probe; until then a diagnostic cannot claim a
-    # camera it has never reached is live, so surface an explicit not-wired code.
-    return CameraTestResult(
-        ok=False,
-        message="RTSP probe is not wired yet (Phase 4).",
-        error_code="CANCELLED",
+    try:
+        source = factory(camera)
+    except Exception as exc:  # noqa: BLE001 - a decrypt failure is still diagnostic data
+        outcome = failure_outcome(classify_code(exc, fallback="DECODE_FAILED"), camera.rtsp_url)
+    else:
+        outcome = await probe_source(source, url=camera.rtsp_url)
+    return CameraTestResult(**asdict(outcome))
+
+
+@router.post("/test", response_model=CameraTestResult)
+async def test_draft_camera(
+    body: CameraCreate,
+    _: AdminDep,
+    factory: SourceFactoryDep,
+) -> CameraTestResult:
+    """Probe unsaved credentials (PRD: test connection before saving).
+
+    Builds an in-memory `Camera`-shaped object; nothing is persisted, so the
+    dialog can diagnose a new camera before the user commits to saving it.
+    """
+    from app.core.crypto import encrypt  # noqa: PLC0415 - DPAPI touch only when used
+
+    draft = Camera(
+        rtsp_url=body.rtsp_url,
+        rtsp_username=body.username,
+        rtsp_password_enc=encrypt(body.password).encode() if body.password else None,
     )
+    try:
+        source = factory(draft)
+    except Exception as exc:  # noqa: BLE001 - a decrypt failure is still diagnostic data
+        outcome = failure_outcome(classify_code(exc, fallback="DECODE_FAILED"), body.rtsp_url)
+    else:
+        outcome = await probe_source(source, url=body.rtsp_url)
+    return CameraTestResult(**asdict(outcome))
 
 
-@router.post("/{camera_id}/snapshot", response_model=CameraTestResult)
-async def snapshot_camera(camera_id: int, claims: ClaimsDep, db: DbSessionDep) -> CameraTestResult:
-    """Capture a single JPEG. Phase 4 wires the real frame source."""
-    camera = _repo(db, claims).get(camera_id)
-    if camera is None:
-        raise NotFoundError("camera not found")
-    return CameraTestResult(
-        ok=False,
-        message="Snapshot is not wired yet (Phase 4).",
-        error_code="CANCELLED",
-    )
+@router.post("/{camera_id}/snapshot")
+async def snapshot_camera(
+    camera_id: int,
+    claims: ClaimsDep,
+    db: DbSessionDep,
+    factory: SourceFactoryDep,
+) -> Response:
+    """Capture a single JPEG frame (D2: image/jpeg bytes, never a JSON body).
 
-
-@router.get("/{camera_id}/stream")
-async def stream_camera(camera_id: int, claims: ClaimsDep, db: DbSessionDep) -> Response:
-    """MJPEG live stream. Phase 5 wires real frames; until then 501.
-
-    Returning a 501 (not a placeholder JPEG) keeps the stub from being
-    mistaken for a working stream in the dashboard.
+    Role `any` — the ROI editor draws against a frozen still. A camera that
+    cannot produce a frame fails through the standard error envelope, never
+    a half-written JPEG.
     """
     camera = _repo(db, claims).get(camera_id)
     if camera is None:
         raise NotFoundError("camera not found")
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content={
-            "error": {
-                "code": "NOT_IMPLEMENTED",
-                "message": "stream endpoint is not wired yet (Phase 5)",
-                "field": None,
-                "correlation_id": "not-wired",
-            }
-        },
+    try:
+        source = factory(camera)
+        frame = await capture_frame(source)
+    except Exception as exc:  # noqa: BLE001 - surfaced as the standard envelope
+        outcome = failure_outcome(classify_code(exc, fallback="CONNECT_TIMEOUT"), camera.rtsp_url)
+        raise StreamError(outcome.message) from exc
+    jpeg = encode_jpeg(frame)
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/{camera_id}/stream")
+async def stream_camera(
+    camera_id: int,
+    claims: ClaimsDep,
+    db: DbSessionDep,
+    request: Request,
+    factory: SourceFactoryDep,
+    slots: StreamSlotsDep,
+    stats: StreamStatsDep,
+) -> Response:
+    """MJPEG live stream: multipart/x-mixed-replace with a per-IP slot cap (D1).
+
+    The slot is released when the streaming generator finishes (including a
+    client disconnect), never when this route returns.
+    """
+    camera = _repo(db, claims).get(camera_id)
+    if camera is None:
+        raise NotFoundError("camera not found")
+    ip = request.client.host if request.client else "unknown"
+    if not slots.try_acquire(ip):
+        return _error_response(
+            request,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "NO_CAPACITY",
+            f"Too many concurrent streams for this client (limit {slots.per_ip}).",
+        )
+    try:
+        source = factory(camera)
+    except Exception as exc:  # noqa: BLE001 - surfaced as the standard envelope
+        slots.release(ip)
+        outcome = failure_outcome(classify_code(exc, fallback="CONNECT_TIMEOUT"), camera.rtsp_url)
+        raise StreamError(outcome.message) from exc
+
+    async def _guarded() -> AsyncIterator[bytes]:
+        # Stats feed GET /system/status: the tracked generator brackets this
+        # consumer and counts every multipart frame part (API §System).
+        try:
+            async for part in tracked_parts(source, stats, camera_id):
+                yield part
+        finally:
+            slots.release(ip)
+
+    return StreamingResponse(
+        _guarded(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
     )

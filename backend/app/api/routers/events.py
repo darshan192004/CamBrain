@@ -7,9 +7,11 @@ client never constructs or sends a filesystem path (SECURITY §6.2).
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Response
+from fastapi.responses import FileResponse
 
 from app.api.deps import ClaimsDep, DbSessionDep
 from app.api.schemas import (
@@ -21,6 +23,7 @@ from app.api.schemas import (
     EventStatsOut,
     RuleRef,
 )
+from app.core.config import settings
 from app.core.errors import NotFoundError
 from app.db.models.event import Event
 from app.db.repositories.cameras import CameraRepository
@@ -169,6 +172,26 @@ def acknowledge_bulk(
     """Acknowledge many events; returns the count newly acknowledged."""
     count = _repo(db, claims).acknowledge_bulk(body.event_ids, int(claims["sub"]))
     return {"acknowledged": count}
+
+
+@router.get("/events/{event_id}/thumbnail")
+def get_thumbnail(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> FileResponse:
+    """Serve the event's still. 404 when never written or pruned.
+
+    Phase 5 writes stills; the route exists now so `thumbnail_url` (D8)
+    never 404s for a reason other than "no image". `thumbnail_path` is
+    resolved inside the media root only — an escaping path is 404, never
+    served (SECURITY §6.2).
+    """
+    event = _repo(db, claims).get(event_id)
+    if event is None or event.thumbnail_path is None:
+        raise NotFoundError("thumbnail not found")
+    root = settings.media_root.resolve()
+    path = Path(event.thumbnail_path)
+    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
+    if not resolved.is_relative_to(root) or not resolved.is_file():
+        raise NotFoundError("thumbnail not found")
+    return FileResponse(resolved, media_type="image/jpeg")
 
 
 @router.get("/events/{event_id}/clip")

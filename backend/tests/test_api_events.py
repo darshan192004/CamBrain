@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -155,6 +158,91 @@ def test_clip_404_when_absent(
     db_session.expire_all()
     resp = client.get(f"/api/v1/events/{event.id}/clip", headers=admin_headers)
     assert resp.status_code == 404
+
+
+def test_thumbnail_serves_file(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db_session: Session,
+    seeded,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """thumbnail_url resolves to image/jpeg bytes (D8; Phase 5 writes stills)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "media_root", tmp_path)
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    payload = b"\xff\xd8\xff\xe0tiny-jpeg-bytes\xff\xd9"
+    event = _seed_event(db_session, site.id, cid)  # id known before the file lands
+    still = tmp_path / "stills" / f"{event.id}.jpg"
+    still.parent.mkdir()
+    still.write_bytes(payload)
+    row = db_session.get(Event, event.id)
+    assert row is not None
+    row.thumbnail_path = f"stills/{event.id}.jpg"  # relative, as DATABASE.md §4.7
+    db_session.commit()
+    db_session.expire_all()
+    resp = client.get(f"/api/v1/events/{event.id}/thumbnail", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert resp.content == payload
+
+
+def test_thumbnail_outside_root_is_404(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db_session: Session,
+    seeded,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A thumbnail_path escaping the media root is 404, never served (SECURITY §6.2)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "media_root", tmp_path)
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    outside = tmp_path.parent / "evil.jpg"
+    outside.write_bytes(b"\xff\xd8evil\xff\xd9")
+    event = _seed_event(db_session, site.id, cid, thumbnail_path=str(outside))
+    db_session.expire_all()
+    resp = client.get(f"/api/v1/events/{event.id}/thumbnail", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_thumbnail_404_when_absent(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    event = _seed_event(db_session, site.id, cid)  # thumbnail_path defaults to None
+    db_session.expire_all()
+    resp = client.get(f"/api/v1/events/{event.id}/thumbnail", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_thumbnail_cross_tenant_404(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    """A still from another site is a 404, never a 403 (IDOR defence)."""
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    event = _seed_event(db_session, site.id, cid)
+    other = Site(name="Other", timezone="UTC")
+    db_session.add(other)
+    db_session.flush()
+    row = db_session.get(Event, event.id)
+    assert row is not None
+    row.site_id = other.id
+    db_session.commit()
+    db_session.expire_all()
+    resp = client.get(f"/api/v1/events/{event.id}/thumbnail", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
 
 
 def test_cross_tenant_returns_404(

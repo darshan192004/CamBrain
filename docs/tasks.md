@@ -127,18 +127,20 @@ Phases are sequenced so that **each phase ends with something demonstrable**. No
 
 ## Phase 4 — Dashboard & ROI editor
 
-- [ ] Vue app shell, router, Pinia stores
-- [ ] Design tokens → CSS variables
-- [ ] `ui/` primitives copied from shadcn-vue, restyled to tokens
-- [ ] Login + AuthGuard + RoleGate
-- [ ] `AppShell` · `Sidebar` · `TopBar` · `StatusBar`
-- [ ] `CameraGrid` + `CameraTile` — MJPEG live view, states per [design.md](design.md)
-- [ ] `AddCameraDialog` with **test connection** and real failure reasons
-- [ ] `RoiEditor` — frozen snapshot, draggable vertices, coverage %, zone list, class filter
-- [ ] Normalised coordinate storage verified against a resolution change
-- [ ] Event log — table, filters, thumbnails, bulk acknowledge
-- [ ] Reduced-motion honoured; keyboard operability of ROI editor
-- [ ] Accessibility pass — contrast, focus rings, `aria-live` for alerts
+- [x] Vue app shell, router, Pinia stores
+- [x] Design tokens → CSS variables
+- [x] Component primitives restyled to tokens (deviation D7: raw Tailwind — no shadcn-vue `ui/` copies)
+- [x] Login + AuthGuard + RoleGate
+- [x] `AppShell` ▸ `Sidebar` ▸ `TopBar` ▸ `StatusBar`
+- [x] `CameraGrid` + `CameraTile` — MJPEG live view, states per [design.md](design.md)
+- [x] `AddCameraDialog` with **test connection** and real failure reasons
+- [x] `RoiEditor` — frozen snapshot, draggable vertices, coverage %, zone list, class filter
+- [x] Normalised coordinate storage verified against a resolution change
+- [x] Event log — table, filters, thumbnails, bulk acknowledge
+- [x] Reduced-motion honoured; keyboard operability of ROI editor
+- [x] Accessibility pass — contrast, focus rings, `aria-live` for alerts
+- [x] Rules editor on camera detail
+- [x] Settings pages — Users (admin) + System status
 
 ---
 

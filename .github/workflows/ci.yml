@@ -124,7 +124,7 @@ jobs:
         run: |
           if [ -f frontend/package.json ]; then
             echo "armed=true" >> "$GITHUB_OUTPUT"
-            printf '## Frontend lint + build\n\n**Armed** — `frontend/package.json` found. Running eslint, prettier and the vite build.\n' >> "$GITHUB_STEP_SUMMARY"
+            printf '## Frontend lint + build\n\n**Armed** — `frontend/package.json` found. Running eslint, prettier, vitest and the vite build.\n' >> "$GITHUB_STEP_SUMMARY"
           else
             echo "armed=false" >> "$GITHUB_OUTPUT"
             printf '## Frontend lint + build\n\n**Pending** — `frontend/package.json` does not exist yet. This job arms itself automatically once Phase 0 Task 0.8 scaffolds the dashboard.\n' >> "$GITHUB_STEP_SUMMARY"
@@ -151,6 +151,11 @@ jobs:
         if: steps.arm.outputs.armed == 'true'
         working-directory: frontend
         run: npm run format:check
+
+      - name: Unit tests
+        if: steps.arm.outputs.armed == 'true'
+        working-directory: frontend
+        run: npm run test
 
       - name: Build
         if: steps.arm.outputs.armed == 'true'

@@ -67,6 +67,19 @@
 
 **`POST /api/v1/auth/refresh`** rotates the refresh token and returns a new pair. Presenting an already-rotated token revokes the entire family — that is how token theft is detected.
 
+**`GET /api/v1/auth/me`** — the dashboard's boot payload (session hydration on reload).
+
+```json
+// Response 200
+{
+  "user_id": 1,
+  "username": "ramesh",
+  "role": "admin",
+  "site_id": 1,
+  "site_name": "Dhanraj Complex"
+}
+```
+
 ---
 
 ### Cameras
@@ -79,6 +92,7 @@
 | `PATCH` | `/api/v1/cameras/{id}` | admin |
 | `DELETE` | `/api/v1/cameras/{id}` | admin |
 | `POST` | `/api/v1/cameras/{id}/test` | admin |
+| `POST` | `/api/v1/cameras/test` | admin |
 | `POST` | `/api/v1/cameras/{id}/snapshot` | any |
 | `GET` | `/api/v1/cameras/{id}/stream` | any |
 
@@ -154,9 +168,17 @@ Opens a short-lived connection, reads up to 10 frames, closes it.
 
 > The brief anticipated "easy setup wizard … that tells the user exactly what's wrong." This endpoint is where that lives. **Add-camera is the product's first impression** — it has to fail usefully.
 
+`POST /api/v1/cameras/test`
+
+Identical response shape, but takes a `CameraCreate`-shaped body (`name`, `rtsp_url`, optional `username`/`password`) and **persists nothing**: the dialog can probe a camera that does not exist yet (PRD: "test connection before saving"). Same six `error_code`s, same always-`200` semantics; the draft is never written to the database, and a subsequent `GET /cameras` reflects only saved cameras.
+
+`POST /api/v1/cameras/{id}/snapshot`
+
+`200` with `Content-Type: image/jpeg` and `Cache-Control: no-store` — one encoded frame as **binary**, not JSON (the ROI editor draws against this still; role `any`). `404` for an unknown camera. When no frame can be read, the standard error envelope carries the reason instead of a half-written JPEG.
+
 `GET /api/v1/cameras/{id}/stream`
 
-`multipart/x-mixed-replace; boundary=frame`. On stream error, emits a zero-length part so the client re-reads the next header. Rate limited to 4 concurrent streams per session. See [memory.md](memory.md) for why MJPEG and not WebRTC.
+`multipart/x-mixed-replace; boundary=frame`. On stream error, emits a zero-length part so the client re-reads the next header. Rate limited to 12 concurrent streams per client IP; excess connections get `503 NO_CAPACITY` (plan D1 — sized for the 8-tile grid). See [memory.md](memory.md) for why MJPEG and not WebRTC.
 
 ---
 
@@ -287,6 +309,7 @@ Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when t
 | `POST` | `/api/v1/events/{id}/acknowledge` | any |
 | `POST` | `/api/v1/events/acknowledge-bulk` | any |
 | `GET` | `/api/v1/events/{id}/clip` | any |
+| `GET` | `/api/v1/events/{id}/thumbnail` | any |
 | `GET` | `/api/v1/events/stats` | any |
 
 `GET /api/v1/events`
@@ -331,6 +354,8 @@ Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when t
 **`thumbnail_url` and `clip_url` are opaque URLs resolved by event id.** The client never constructs or sends a filesystem path — that is the path-traversal defence in [SECURITY.md §6.2](SECURITY.md).
 
 `GET /api/v1/events/{id}/clip` streams with `Content-Disposition: inline` and supports `Range`, so the browser can seek without downloading the whole file. Returns `404` when the clip was deleted by retention or never written because the disk quota refused it.
+
+`GET /api/v1/events/{id}/thumbnail` serves the stored still as `image/jpeg`, or `404` when no still was written (Phase 5 writes stills).
 
 `GET /api/v1/events/stats` returns counts by day, camera, and severity for the dashboard header.
 
@@ -485,7 +510,7 @@ Per client IP, fixed window.
 | `POST /auth/login` | 5/min per username, then exponential lockout |
 | `POST /auth/refresh` | 30/min |
 | `POST /cameras/{id}/test` | 10/min — each opens a real RTSP connection |
-| `GET /cameras/{id}/stream` | 4 concurrent per session |
+| `GET /cameras/{id}/stream` | 12 concurrent per client IP |
 | `GET /ws/frames` | 10 fps subscribe rate |
 | Everything else | 120/min |
 

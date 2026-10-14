@@ -45,9 +45,20 @@ export default [
   },
   {
     files: ["**/*.vue"],
+    languageOptions: {
+      sourceType: "module",
+      globals: { ...globals.browser, ...globals.node },
+    },
     rules: {
       "vue/multi-word-component-names": "off",
       "vue/singleline-html-element-content-newline": "off",
+      // Prettier prints Vue void elements self-closed (<input />); the rule's
+      // default demands <input>, so the two formatters would fight.
+      "vue/html-self-closing": "off",
+      // Prettier collapses any open tag that fits printWidth into one line,
+      // so "one attribute per line" is unsatisfiable for short multi-attribute
+      // elements — prettier owns attribute layout end to end.
+      "vue/max-attributes-per-line": "off",
     },
   },
 ];

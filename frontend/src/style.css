@@ -1,4 +1,100 @@
 /* Tailwind v4 is CSS-first: the utility layer is imported, not generated
-   from a JS config. Design tokens arrive in Phase 4 as CSS variables —
-   hardcoded hex in components is prohibited (Global Constraints). */
+   from a JS config. Design §2 tokens are the only place hex colours are
+   written — components use var(--token) or the Tailwind utilities that map
+   to them (Global Constraints: no hardcoded hex in components). */
 @import "tailwindcss";
+
+/* Design §2 palette — dark by default. Exact token names from design.md.
+   Values audited against WCAG 2.1 AA (plan 4.18): bg-raised, text-muted,
+   and alert-critical were nudged so every real text pair clears 4.5:1;
+   the *-fill tokens carry white button text at 4.5:1+ where the lighter
+   interactive accent could not (white on #3B82F6 was 3.68). */
+:root {
+  --bg-base: #0b0d10;
+  --bg-surface: #14181d;
+  --bg-raised: #191e23;
+  --border: #252b32;
+  --text-primary: #e8ebee;
+  --text-secondary: #9ba5af;
+  --text-muted: #7e8792;
+  --accent: #3b82f6;
+  --accent-hover: #2f6fd0;
+  --accent-fill: #2563eb;
+  --accent-fill-hover: #1d4ed8;
+  --alert-critical: #ea595e;
+  --alert-critical-fill: #c4383d;
+  --alert-warning: #f5a524;
+  --alert-success: #30a46c;
+  --roi-fill: #3b82f660;
+  --roi-stroke: #3b82f6;
+  --detect-box: #30a46c;
+
+  /* Radius (design §2): 6px controls, 10px cards, 999px pills. */
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-pill: 999px;
+
+  /* Motion tokens (design §2). */
+  --dur-fast: 120ms;
+  --dur-base: 150ms;
+  --dur-slow: 300ms;
+  --dur-alert: 400ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Tailwind v4 namespace mapping: theme values reference the :root tokens so
+   utilities (bg-bg-base, text-text-secondary, ease-snappy, font-mono…) stay
+   one source of truth. Colour names differ from the :root names (--color-*
+   namespace) so nothing is self-referential. */
+@theme {
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-raised: var(--bg-raised);
+  --color-border: var(--border);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-fill-hover: var(--accent-fill-hover);
+  --color-alert-critical: var(--alert-critical);
+  --color-alert-critical-fill: var(--alert-critical-fill);
+  --color-alert-warning: var(--alert-warning);
+  --color-alert-success: var(--alert-success);
+  --color-roi-fill: var(--roi-fill);
+  --color-roi-stroke: var(--roi-stroke);
+  --color-detect-box: var(--detect-box);
+
+  /* Typography (design §2): Inter for UI, JetBrains Mono for addresses and
+   timestamps. Declared only here so the theme emits them once. */
+  --font-sans: "Inter", system-ui, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+
+  /* Radius: 6px == rounded-md (Tailwind default); cards rebrand rounded-xl
+   from 12px to the design's 10px; pills use rounded-full. */
+  --radius-xl: var(--radius-card);
+
+  --ease-snappy: var(--ease);
+}
+
+/* Design §11: keyboard focus is always visible — the accent ring, 2px with
+   a 2px offset, on every interactive element. :where() keeps specificity at
+   zero so component-level focus styles (VertexHandle) still win. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Design §1: honour reduced motion by collapsing every transition and
+   animation to an imperceptible tick (acceptance of task 4.9). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -6,12 +6,18 @@ Covers the Phase 2 verification-matrix rows: `test_get_never_returns_password`,
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.errors import StreamError
 from app.db.models import Camera, Site, User
+from app.services.stream.factory import get_source_factory
+from app.services.stream.file_source import FileSource
+from app.services.stream.source import FrameSource
 
 _URL = "rtsp://10.0.0.5:554/Streaming/Channels/101"
 
@@ -196,26 +202,242 @@ def test_cross_tenant_returns_404(
     assert resp.json()["error"]["code"] == "NOT_FOUND"
 
 
-def test_test_endpoint_returns_ok_false_with_code(
+def _override_factory(client: TestClient, factory: Callable[[Camera], FrameSource]):
+    """Context manager: point the API's frame-source seam at a test double."""
+
+    @contextmanager
+    def _ctx() -> Iterator[None]:
+        client.app.dependency_overrides[get_source_factory] = lambda: factory
+        try:
+            yield
+        finally:
+            client.app.dependency_overrides.pop(get_source_factory, None)
+
+    return _ctx()
+
+
+def test_probe_ok_reports_dims_and_fps(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """A reachable source reports real dimensions, fps, and a human message."""
+    clip = Path(str(gate_clip_path))
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: FileSource(clip, loop=False)):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/test", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert data["error_code"] is None
+    assert data["frame_width"] and data["frame_width"] > 0
+    assert data["frame_height"] and data["frame_height"] > 0
+    assert data["fps"] and data["fps"] > 0
+    assert data["latency_ms"] is not None and data["latency_ms"] >= 0
+    assert data["message"].startswith("Connected.")
+
+
+def test_probe_transport_failure_is_200_with_code(
     client: TestClient, admin_headers: dict[str, str]
 ) -> None:
-    """A failed probe is 200 with a typed error_code, not an HTTP error."""
+    """A failed probe is data, not an HTTP error (API Cameras /test)."""
+
+    class _Refused:
+        async def frames(self) -> AsyncIterator[object]:
+            raise ConnectionRefusedError("connection refused")
+            yield  # pragma: no cover - makes this an async generator
+
+        async def close(self) -> None:
+            return None
+
     created = _create(client, admin_headers)
-    resp = client.post(f"/api/v1/cameras/{created['id']}/test", headers=admin_headers)
+    with _override_factory(client, lambda _cam: _Refused()):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/test", headers=admin_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is False
-    assert data["error_code"] in {
-        "AUTH_FAILED",
-        "CONNECT_TIMEOUT",
-        "HOST_UNREACHABLE",
-        "NO_SUCH_STREAM",
-        "DECODE_FAILED",
-        "CANCELLED",
-    }
+    assert data["error_code"] == "HOST_UNREACHABLE"
+    assert data["message"]
+    # Never leak the camera password in a diagnostic message.
+    assert "secret123" not in resp.text
 
 
-def test_stream_is_501_until_wired(client: TestClient, admin_headers: dict[str, str]) -> None:
+def test_probe_stream_error_reason_is_honoured(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """A StreamError raised by the source carries its typed reason through."""
+
+    class _Auth:
+        async def frames(self) -> AsyncIterator[object]:
+            raise StreamError("AUTH_FAILED: rtsp://10.0.0.5:554/… (401 Unauthorized)")
+            yield  # pragma: no cover
+
+        async def close(self) -> None:
+            return None
+
     created = _create(client, admin_headers)
-    resp = client.get(f"/api/v1/cameras/{created['id']}/stream", headers=admin_headers)
-    assert resp.status_code == 501
+    with _override_factory(client, lambda _cam: _Auth()):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/test", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is False
+    assert data["error_code"] == "AUTH_FAILED"
+    assert "Authentication failed" in data["message"]
+
+
+def test_probe_unknown_camera_404(client: TestClient, admin_headers: dict[str, str]) -> None:
+    resp = client.post("/api/v1/cameras/999999/test", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_snapshot_returns_jpeg_magic(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """Snapshot is a real JPEG with no-store, not a JSON envelope (D2)."""
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: FileSource(Path(str(gate_clip_path)), loop=False)):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/snapshot", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.content.startswith(b"\xff\xd8")
+    assert b"secret123" not in resp.content
+
+
+def test_snapshot_404_unknown_camera(client: TestClient, admin_headers: dict[str, str]) -> None:
+    resp = client.post("/api/v1/cameras/999999/snapshot", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_snapshot_viewer_allowed(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    viewer_headers: dict[str, str],
+    gate_clip_path: Path,
+) -> None:
+    """Snapshot is role `any` — the ROI editor must not need admin."""
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: FileSource(Path(str(gate_clip_path)), loop=False)):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/snapshot", headers=viewer_headers)
+    assert resp.status_code == 200
+
+
+def test_snapshot_source_failure_is_error_envelope(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """An unreadable camera fails with the standard envelope, never a half-JPEG."""
+
+    class _Refused:
+        async def frames(self) -> AsyncIterator[object]:
+            raise ConnectionRefusedError("connection refused")
+            yield  # pragma: no cover
+
+        async def close(self) -> None:
+            return None
+
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: _Refused()):
+        resp = client.post(f"/api/v1/cameras/{created['id']}/snapshot", headers=admin_headers)
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body["error"]["code"] == "INTERNAL"
+    assert "Could not connect" in body["error"]["message"]
+    assert "secret123" not in resp.text
+
+
+def test_stream_sends_multipart_frames(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """The stream is multipart JPEG parts, ending with the close boundary."""
+    created = _create(client, admin_headers)
+    with _override_factory(client, lambda _cam: FileSource(Path(str(gate_clip_path)), loop=False)):
+        resp = client.get(f"/api/v1/cameras/{created['id']}/stream", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("multipart/x-mixed-replace; boundary=frame")
+    body = resp.content
+    jpeg_parts = [p for p in body.split(b"--frame\r\n") if b"Content-Length" in p]
+    assert len(jpeg_parts) >= 2
+    assert b"secret123" not in body
+    assert body.endswith(b"--frame--\r\n")
+
+
+def test_stream_404_unknown_camera(client: TestClient, admin_headers: dict[str, str]) -> None:
+    resp = client.get("/api/v1/cameras/999999/stream", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_stream_slot_cap_returns_503(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """D1: cap 12 concurrent per client IP; a full slot is 503 NO_CAPACITY."""
+    from app.services.stream.mjpeg import StreamSlots, get_stream_slots
+
+    slots = StreamSlots(per_ip=1)
+    client.app.dependency_overrides[get_stream_slots] = lambda: slots
+    try:
+        assert slots.try_acquire("testclient")  # hold the only slot
+        resp = client.get(
+            f"/api/v1/cameras/{_create(client, admin_headers)['id']}/stream", headers=admin_headers
+        )
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "NO_CAPACITY"
+
+        slots.release("testclient")
+        created = _create(client, admin_headers)
+        with _override_factory(
+            client, lambda _cam: FileSource(Path(str(gate_clip_path)), loop=False)
+        ):
+            resp = client.get(f"/api/v1/cameras/{created['id']}/stream", headers=admin_headers)
+        assert resp.status_code == 200
+        # The slot is released when the stream generator finishes.
+        assert slots.try_acquire("testclient")
+        slots.release("testclient")
+    finally:
+        client.app.dependency_overrides.pop(get_stream_slots, None)
+
+
+def test_draft_probe_ok_never_persists(
+    client: TestClient, admin_headers: dict[str, str], gate_clip_path: Path
+) -> None:
+    """POST /cameras/test probes unsaved credentials without creating a row
+    (PRD: "test connection before saving")."""
+    clip = Path(str(gate_clip_path))
+    body = {"name": "Draft", "rtsp_url": _URL, "username": "admin", "password": "secret123"}
+    with _override_factory(client, lambda _cam: FileSource(clip, loop=False)):
+        resp = client.post("/api/v1/cameras/test", json=body, headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert data["frame_width"] and data["frame_width"] > 0
+    assert data["message"].startswith("Connected.")
+    assert client.get("/api/v1/cameras", headers=admin_headers).json() == []
+
+
+def test_draft_probe_failure_is_200_with_code(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """A draft probe failure is data with a typed code, never an HTTP error."""
+
+    class _Refused:
+        async def frames(self) -> AsyncIterator[object]:
+            raise ConnectionRefusedError("connection refused")
+            yield  # pragma: no cover
+
+        async def close(self) -> None:
+            return None
+
+    body = {"name": "Draft", "rtsp_url": _URL, "password": "secret123"}
+    with _override_factory(client, lambda _cam: _Refused()):
+        resp = client.post("/api/v1/cameras/test", json=body, headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is False
+    assert data["error_code"] == "HOST_UNREACHABLE"
+    assert "secret123" not in resp.text
+
+
+def test_draft_probe_requires_admin(client: TestClient, viewer_headers: dict[str, str]) -> None:
+    body = {"name": "Draft", "rtsp_url": _URL}
+    resp = client.post("/api/v1/cameras/test", json=body, headers=viewer_headers)
+    assert resp.status_code == 403

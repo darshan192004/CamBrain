@@ -160,6 +160,77 @@ def test_clip_404_when_absent(
     assert resp.status_code == 404
 
 
+def test_clip_route_serves_real_file(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db_session: Session,
+    seeded,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """clip_url streams video/mp4 inline with Range seeking (API §Events)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "media_root", tmp_path)
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    payload = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
+    event = _seed_event(db_session, site.id, cid, clip_path=None)
+    clip = tmp_path / "clips" / f"{event.id}.mp4"
+    clip.parent.mkdir()
+    clip.write_bytes(payload)
+    row = db_session.get(Event, event.id)
+    assert row is not None
+    row.clip_path = f"clips/{event.id}.mp4"  # relative, as DATABASE.md §4.7
+    db_session.commit()
+    db_session.expire_all()
+    resp = client.get(f"/api/v1/events/{event.id}/clip", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "video/mp4"
+    assert resp.headers["content-disposition"].startswith("inline")
+    assert resp.content == payload
+    partial = client.get(
+        f"/api/v1/events/{event.id}/clip", headers={**admin_headers, "Range": "bytes=0-7"}
+    )
+    assert partial.status_code == 206
+    assert partial.content == payload[:8]
+
+
+def test_clip_outside_root_is_404(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db_session: Session,
+    seeded,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A clip_path escaping the media root is 404, never served (SECURITY §6.2)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "media_root", tmp_path)
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    outside = tmp_path.parent / "evil.mp4"
+    outside.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    event = _seed_event(db_session, site.id, cid, clip_path=str(outside))
+    db_session.expire_all()
+    resp = client.get(f"/api/v1/events/{event.id}/clip", headers=admin_headers)
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_clip_missing_file_is_404(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    """A clip whose file was pruned or never written is a 404 (DATABASE §4.7)."""
+    site, _admin, _viewer = seeded
+    cid = _make_camera(client, admin_headers)
+    event = _seed_event(db_session, site.id, cid, clip_path="clips/999.mp4")
+    db_session.expire_all()
+    resp = client.get(f"/api/v1/events/{event.id}/clip", headers=admin_headers)
+    assert resp.status_code == 404
+
+
 def test_thumbnail_serves_file(
     client: TestClient,
     admin_headers: dict[str, str],

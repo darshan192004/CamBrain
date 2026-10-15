@@ -53,6 +53,9 @@ class CameraPipeline:
         source: Any ``FrameSource`` (clip, RTSP, or a double in tests).
         sink: Receives frames that pass the gate at the sample rate.
         motion: The gate; a default MOG2 gate is used when omitted.
+        on_frame: Sees every received frame *before* the gate — the seam for
+            frame-dims/status bridging, which a quiet scene must still earn
+            (T13: live must not wait for someone to walk past).
     """
 
     def __init__(
@@ -62,11 +65,13 @@ class CameraPipeline:
         sink: FrameSink,
         *,
         motion: MotionGate | None = None,
+        on_frame: FrameSink | None = None,
     ) -> None:
         self._config = config
         self._source = source
         self._sink = sink
         self._motion = motion or MotionGate()
+        self._on_frame = on_frame
         self._min_interval = 1.0 / config.sample_fps
         self._last_send_at: float = 0.0
         self._status = PipelineStatus()
@@ -87,6 +92,8 @@ class CameraPipeline:
             async for frame in self._source.frames():
                 self._status.frames_received += 1
                 self._status.last_frame_at = time.monotonic()
+                if self._on_frame is not None:
+                    await self._on_frame(frame)
                 if not self._motion.update(frame):
                     continue
                 now = time.monotonic()

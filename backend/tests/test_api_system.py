@@ -111,6 +111,32 @@ def test_status_shape(
         assert "stats" in data
 
 
+def test_status_reports_hardware_and_model(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """The dashboard's tier/model/hardware rows come from the real probe (T13)."""
+    resp = client.get("/api/v1/system/status", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["hardware_tier"] in ("low", "medium", "high", "unknown")
+    hardware = data["hardware"]
+    for key in (
+        "cpu_cores",
+        "avx2",
+        "vnni",
+        "ram_total_mb",
+        "ram_used_mb",
+        "disk_total_gb",
+        "disk_used_pct",
+    ):
+        assert key in hardware, key
+    if data["hardware_tier"] != "unknown":
+        model = data["model"]
+        assert model["name"].endswith(".onnx")
+        assert model["tier"] == data["hardware_tier"]
+        assert model["input"][0] == model["input"][1]
+
+
 def test_config_requires_admin(client: TestClient, viewer_headers: dict[str, str]) -> None:
     assert client.get("/api/v1/system/config", headers=viewer_headers).status_code == 403
 

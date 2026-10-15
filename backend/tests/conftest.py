@@ -15,6 +15,9 @@ import pytest
 
 # Must be set before app.api.auth derives its signing key at import time.
 os.environ.setdefault("CAMBRAIN_JWT_SECRET", "test-only-secret-do-not-use-in-prod")
+# Runtime off in tests (D10): no sockets, no model files, no pipelines.
+# (env_prefix CAMBRAIN_ -> runtime_enabled reads CAMBRAIN_RUNTIME_ENABLED.)
+os.environ.setdefault("CAMBRAIN_RUNTIME_ENABLED", "0")
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
@@ -77,7 +80,11 @@ def clips() -> dict[str, Path]:
 @pytest.fixture
 def db_session(tmp_path: Path) -> Iterator[Session]:
     """A fresh temp-DB session per test, torn down on exit."""
-    engine = create_engine(f"sqlite:///{tmp_path}/test.db")
+    # check_same_thread=False matches production (db/session.py): the runtime
+    # bridge writes from camera worker threads (T13).
+    engine = create_engine(
+        f"sqlite:///{tmp_path}/test.db", connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = factory()

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,8 +20,21 @@ from app.api.routers.system import router as system_router
 from app.api.routers.users import router as users_router
 from app.api.ws import router as ws_router
 from app.core.config import settings
+from app.services.runtime import Runtime
 
 API_PREFIX = "/api/v1"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Start the alerting runtime; stop it on shutdown (arch A7)."""
+    runtime = Runtime()
+    app.state.runtime = runtime
+    await runtime.start()
+    try:
+        yield
+    finally:
+        await runtime.stop()
 
 
 def create_app() -> FastAPI:
@@ -33,6 +49,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         openapi_url=f"{API_PREFIX}/openapi.json",
         docs_url=f"{API_PREFIX}/docs",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,

@@ -336,3 +336,22 @@ def test_cross_tenant_returns_404(
 def test_unauthenticated_rejected(client: TestClient) -> None:
     resp = client.get("/api/v1/events")
     assert resp.status_code == 401
+
+
+def test_system_event_serialises_as_system_camera(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    """A quota refusal reads as a site event: camera null, stats key 'system' (D5)."""
+    from app.services.events.persist import create_system_event
+
+    site, _a, _v = seeded
+    event = create_system_event(db_session, site_id=site.id, severity="critical", summary="quota")
+    res = client.get(f"/api/v1/events/{event.id}", headers=admin_headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["camera"] is None
+    assert body["summary"] == "quota"
+    listing = client.get("/api/v1/events", headers=admin_headers).json()
+    assert listing["items"][0]["camera"] is None
+    stats = client.get("/api/v1/events/stats", headers=admin_headers).json()
+    assert "system" in stats["by_camera"]

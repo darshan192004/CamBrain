@@ -34,8 +34,8 @@ class Event(Base):
     site_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    camera_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("cameras.id", ondelete="CASCADE"), nullable=False, index=True
+    camera_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("cameras.id", ondelete="CASCADE"), nullable=True, index=True
     )
     # NULL = auto/manual, survives rule deletion.
     rule_id: Mapped[int | None] = mapped_column(

@@ -415,7 +415,7 @@ class EventOut(BaseModel):
     """Event list/detail response. URLs are opaque, resolved by event id."""
 
     id: int
-    camera: CameraRef
+    camera: CameraRef | None = None
     rule: RuleRef | None
     severity: str
     summary: str | None

@@ -89,3 +89,31 @@ def test_attach_media_and_mark_delivery(db_session, seeded) -> None:
     assert row.clip_path == "clips/1.mp4" and row.clip_bytes == 2048
     assert row.delivery_status == "sent" and row.delivery_attempts == 1
     assert row.delivered_at is not None and row.last_attempt_at is not None
+
+
+def test_system_event_needs_no_camera(db_session, seeded) -> None:
+    from app.services.events.persist import create_system_event
+
+    site, _a, _v = seeded
+    event = create_system_event(
+        db_session,
+        site_id=site.id,
+        severity="critical",
+        summary="disk quota 81% >= 80%; clip refused for camera Front door",
+    )
+    assert event.camera_id is None and event.triggered_by == "system"
+    assert event.site_id == site.id and event.delivery_status == "pending"
+
+
+def test_quota_latch_fires_once_until_cleared(seeded) -> None:
+    from app.services.alerts.latch import QuotaLatch
+
+    site, _a, _v = seeded
+    fired: list[str] = []
+    latch = QuotaLatch(site_id=site.id, on_fire=fired.append)
+    latch.fire("disk quota exceeded")
+    latch.fire("disk quota exceeded")
+    assert fired == ["disk quota exceeded"], "one alarm per crossing (D12)"
+    latch.clear()
+    latch.fire("disk quota exceeded again")
+    assert len(fired) == 2

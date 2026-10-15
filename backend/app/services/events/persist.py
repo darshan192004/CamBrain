@@ -61,6 +61,31 @@ def create_event(db: Session, alert: Alert) -> Event:
     return event
 
 
+def create_system_event(
+    db: Session,
+    *,
+    site_id: int,
+    severity: str,
+    summary: str,
+    delivery_status: str = "pending",
+) -> Event:
+    """A site-level event with no camera: quota refusals, runtime faults (D5)."""
+    event = Event(
+        site_id=site_id,
+        camera_id=None,
+        rule_id=None,
+        triggered_by="system",
+        started_at=datetime.now(tz=UTC).replace(tzinfo=None),
+        severity=severity,
+        summary=summary,
+        delivery_status=delivery_status,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
 def attach_media(
     db: Session,
     event_id: int,

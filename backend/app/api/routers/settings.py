@@ -19,8 +19,9 @@ from app.api.schemas import (
     SettingsOut,
     SettingsPatch,
 )
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationError
 from app.db.models.site import Site
+from app.services.alerts.telegram import notifiers_from_entries, public_config, seal_config
 
 router = APIRouter(tags=["settings"])
 
@@ -54,13 +55,12 @@ def _notifiers(site: Site) -> list[dict[str, Any]]:
 
 
 def _notifier_out(index: int, entry: dict[str, Any]) -> NotifierOut:
-    """Map a notifier_config entry to its public shape."""
-    raw_config = entry.get("config", {})
+    """Map a notifier_config entry to its public shape (secrets masked)."""
     return NotifierOut(
         id=index,
         kind=str(entry.get("kind", "telegram")),
         enabled=bool(entry.get("enabled", True)),
-        config=dict(raw_config) if isinstance(raw_config, dict) else {},
+        config=public_config(entry),
     )
 
 
@@ -92,7 +92,7 @@ def create_notifier(body: NotifierCreate, claims: AdminDep, db: DbSessionDep) ->
     """Add a notifier. Admin only."""
     site = _site(db, claims)
     entries = _notifiers(site)
-    entry = {"kind": body.kind, "enabled": body.enabled, "config": body.config}
+    entry = {"kind": body.kind, "enabled": body.enabled, "config": seal_config(body.config)}
     entries.append(entry)
     site.notifier_config = entries  # type: ignore[assignment]
     db.commit()
@@ -113,7 +113,8 @@ def patch_notifier(
     if "enabled" in updates:
         entry["enabled"] = updates["enabled"]
     if "config" in updates and updates["config"] is not None:
-        entry["config"] = updates["config"]
+        config = updates["config"]
+        entry["config"] = seal_config(config) if isinstance(config, dict) else config
     site.notifier_config = entries  # type: ignore[assignment]
     db.commit()
     return _notifier_out(notifier_id, entry)
@@ -133,10 +134,14 @@ def delete_notifier(notifier_id: int, claims: AdminDep, db: DbSessionDep) -> Res
 
 
 @router.post("/notifiers/test")
-def test_notifier(claims: AdminDep, db: DbSessionDep) -> Response:  # noqa: ARG001
-    """Send a real test message. Phase 4 wires the transport; explicit 501."""
-    return Response(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content='{"error": {"code": "NOT_IMPLEMENTED", "message": "notifier transport lands in Phase 4", "field": null, "correlation_id": "none"}}',
-        media_type="application/json",
-    )
+async def test_notifier(claims: AdminDep, db: DbSessionDep) -> dict[str, Any]:
+    """Send a real test message; return Telegram's response verbatim (API §System).
+
+    A notifier config that never delivered is not a working notifier —
+    this is the install-time proof. No configured sender is a 422.
+    """
+    entries = _notifiers(_site(db, claims))
+    senders = notifiers_from_entries(entries)
+    if not senders:
+        raise ValidationError("no enabled telegram notifier configured")
+    return await senders[0].send_text("CamBrain test message")

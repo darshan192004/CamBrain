@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse
 
 from app.api.deps import ClaimsDep, DbSessionDep
@@ -195,13 +195,18 @@ def get_thumbnail(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> FileRes
 
 
 @router.get("/events/{event_id}/clip")
-def get_clip(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> Response:
-    """Return the clip bytes. 404 when the clip was never written or was pruned.
+def get_clip(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> FileResponse:
+    """Serve the event's clip. 404 when never written, quota-refused, or pruned.
 
-    Phase 4 wires real storage; this returns 404 so the contract is correct
-    from day one and cannot be mistaken for a working stream.
+    Same traversal defence as the thumbnail: the path resolves inside the
+    media root only, looked up by id from the database (SECURITY §6.2).
     """
     event = _repo(db, claims).get(event_id)
     if event is None or event.clip_path is None:
         raise NotFoundError("clip not found")
-    raise NotFoundError("clip not found")
+    root = settings.media_root.resolve()
+    path = Path(event.clip_path)
+    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
+    if not resolved.is_relative_to(root) or not resolved.is_file():
+        raise NotFoundError("clip not found")
+    return FileResponse(resolved, media_type="video/mp4")

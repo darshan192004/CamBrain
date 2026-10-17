@@ -9,10 +9,10 @@ testable offline with ``FileSource`` and exercises the real RTSP path with
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from collections.abc import Callable
 
+from app.core.logging import get_logger
 from app.services.stream.pipeline import (
     CameraConfig,
     CameraPipeline,
@@ -21,7 +21,10 @@ from app.services.stream.pipeline import (
 )
 from app.services.stream.source import FrameSource
 
-log = logging.getLogger(__name__)
+# Rule 4: redaction is mandatory at the logging call site — the structlog
+# logger routes the message, args, and exc_info through the project's
+# redaction chain; stdlib logging only inherits the foreign-record path.
+log = get_logger(__name__)
 
 SourceFactory = Callable[[CameraConfig], FrameSource]
 

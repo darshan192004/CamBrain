@@ -95,8 +95,9 @@ def _hard_kill_mid_write(db_path: Path) -> None:
     """Run the child, kill it hard once the mid-flight write is in the WAL."""
     env = os.environ.copy()
     env["PYTHONPATH"] = str(BACKEND_DIR)
-    # CREATE_NO_WINDOW: a pytest run must not flash console windows.
-    flags = 0x0800_0000
+    # CREATE_NO_WINDOW: a pytest run must not flash console windows; a
+    # Windows-only flag — 0 is a no-op accepted on POSIX CI runners.
+    flags = 0x0800_0000 if sys.platform == "win32" else 0
     child = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-c", _CHILD, str(db_path)],
         stdout=subprocess.PIPE,

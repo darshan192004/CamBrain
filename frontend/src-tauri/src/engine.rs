@@ -19,6 +19,8 @@ use chrono::Local;
 
 /// Set when the operator quits the shell: the supervisor must not respawn.
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+/// Tray "Pause detection": the supervisor holds the engine down while set.
+static PAUSED: AtomicBool = AtomicBool::new(false);
 /// PID of the live engine child, for the tray's "Restart service".
 static ENGINE_PID: AtomicU32 = AtomicU32::new(0);
 const BACKOFF_CAP_S: u64 = 60;
@@ -32,8 +34,16 @@ pub fn mark_shutdown() {
     SHUTDOWN.store(true, Ordering::SeqCst);
 }
 
+/// Tray pause (D6-6, degraded form): hold the engine down. The tray's
+/// CheckMenuItem tracks state; resume clears it and the backoff loop
+/// respawns within a second.
+pub fn set_paused(paused: bool) {
+    PAUSED.store(paused, Ordering::SeqCst);
+}
+
 /// Kill the current engine child (tray "Restart service"/"Quit"). Harmless if
 /// the engine is down; the supervisor reacts to the death like any other.
+/// /T kills the tree: venv launchers spawn the real interpreter as a child.
 pub fn kill_child() {
     let pid = ENGINE_PID.swap(0, Ordering::SeqCst);
     if pid == 0 {
@@ -120,7 +130,16 @@ pub fn supervise() {
     std::thread::spawn(move || {
         let _ = std::fs::create_dir_all(&env.logs);
         let mut attempt: u32 = 0;
-        while !SHUTDOWN.load(Ordering::SeqCst) {
+        loop {
+            if SHUTDOWN.load(Ordering::SeqCst) {
+                break;
+            }
+            if PAUSED.load(Ordering::SeqCst) {
+                // Tray pause: hold the engine down without exiting the
+                // supervisor, so resume is a state flip, not a restart.
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
             let started = Instant::now();
             let mut child = match spawn_child(&env) {
                 Ok(child) => child,

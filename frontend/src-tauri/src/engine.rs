@@ -76,18 +76,34 @@ fn spawn_child(env: &EngineEnv) -> std::io::Result<Child> {
         .next()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "empty engine cmd"))?;
     let mut command = Command::new(program);
+    // uvicorn logs to stderr; send it to the engine log (append) so the
+    // installer's support path can read what the engine said. The lifecycle
+    // lines from log() share the file.
+    let engine_log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(env.logs.join("engine.log"))
+        .map(Stdio::from)
+        .unwrap_or(Stdio::null());
     command
         .args(parts)
         .current_dir(&env.cwd)
         // D6-3: the packaged app writes under %LOCALAPPDATA%\CamBrain. The
         // backend's config defaults are literal "%LOCALAPPDATA%\..." strings
-        // that never expand, so the shell must pass resolved paths. Every
-        // other environment variable is inherited.
-        .env("CAMBRAIN_DB_PATH", appdata().join("cambrain.db"))
-        .env("CAMBRAIN_MEDIA_ROOT", appdata().join("media"))
-        .env("CAMBRAIN_RUNTIME_ENABLED", "1")
+        // that never expand, so the shell must pass resolved paths — but an
+        // explicitly inherited CAMBRAIN_* (dev, tests, integrators) wins.
+        // CAMBRAIN_RUNTIME_ENABLED unset means the packaged default: on.
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(engine_log);
+    for (key, resolved) in [
+        ("CAMBRAIN_DB_PATH", appdata().join("cambrain.db")),
+        ("CAMBRAIN_MEDIA_ROOT", appdata().join("media")),
+        ("CAMBRAIN_RUNTIME_ENABLED", PathBuf::from("1")),
+    ] {
+        if std::env::var_os(key).is_none() {
+            command.env(key, resolved);
+        }
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

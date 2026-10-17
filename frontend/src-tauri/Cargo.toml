@@ -1,0 +1,25 @@
+[package]
+name = "cambrian-shell"
+version = "0.1.0"
+description = "CamBrain dashboard shell: window + supervised engine child"
+edition = "2021"
+
+# D6-10: the Rust side stays small and dumb. No business logic lives here —
+# the engine child owns every camera, rule, and alert decision; the shell
+# spawns, supervises, and shows a window.
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[profile.release]
+lto = true

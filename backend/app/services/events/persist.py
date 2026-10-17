@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.db.models import Camera, Event
-from app.db.models.event import EventDetection
+from app.db.models.event import AuditLog, EventDetection
 from app.services.alerts.stage import Alert
 
 
@@ -106,6 +106,30 @@ def attach_media(
     db.commit()
     db.refresh(event)
     return event
+
+
+def write_audit(
+    db: Session,
+    *,
+    site_id: int,
+    user_id: int | None,
+    action: str,
+    details: dict[str, object] | None = None,
+) -> AuditLog:
+    """A privileged-action audit row (SECURITY 7.5); first writer for pause.
+
+    Credential-free by contract: ``details`` carries state, never tokens.
+    """
+    row = AuditLog(
+        site_id=site_id,
+        user_id=user_id,
+        action=action,
+        details=details,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def mark_delivery(

@@ -20,6 +20,7 @@ from app.api.routers.settings import router as settings_router
 from app.api.routers.system import router as system_router
 from app.api.routers.users import router as users_router
 from app.api.ws import router as ws_router
+from app.core import bootstrap
 from app.core.config import settings
 from app.services.runtime import Runtime
 
@@ -28,7 +29,17 @@ API_PREFIX = "/api/v1"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Start the alerting runtime; stop it on shutdown (arch A7)."""
+    """Bootstrap models, start the alerting runtime; stop it on shutdown (arch A7).
+
+    The bootstrap is deliberately synchronous: it runs once while the server
+    is still refusing connections, and a degraded result must exist *before*
+    the runtime decides whether it can open detectors (D6-4).
+    """
+    if settings.fetch_models:
+        # Reasons live in bootstrap.last_reason, surfaced by /system/status.
+        # Runtime degrades on missing weights by itself (D6-4). The root is
+        # resolved per launch: repo layout in dev, app data when frozen.
+        bootstrap.ensure_resolved_model(root=bootstrap.data_root())
     runtime = Runtime()
     app.state.runtime = runtime
     await runtime.start()

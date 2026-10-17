@@ -12,16 +12,17 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import psutil
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import func, select
 
 from app.api.deps import ClaimsDep, DbSessionDep, require_role_dep
-from app.api.schemas import HealthOut
+from app.api.schemas import HealthOut, PauseRequest
+from app.core import bootstrap
 from app.core.config import settings
-from app.db.models.camera import Camera
-from app.db.models.event import Event
-from app.db.models.site import Site
+from app.db.models import Camera, Event, Site, User
+from app.services.events.persist import write_audit
 from app.services.inference.tiers import probe_capabilities, resolve_tier
+from app.services.runtime import Runtime
 from app.services.stream.stats import StreamStats, get_stream_stats
 
 router = APIRouter(tags=["system"])
@@ -75,6 +76,36 @@ except Exception:  # noqa: BLE001 — dashboard must render whatever we can read
 _TIER, _MODEL = _resolve_model()
 
 
+@router.post("/system/pause")
+async def pause_route(
+    body: PauseRequest, claims: AdminDep, db: DbSessionDep, request: Request
+) -> dict[str, Any]:
+    """Tray panic button (design.md §tray): stop or reopen every runtime chain.
+
+    Idempotent: a repeated click changes nothing, writes nothing. A *transition*
+    leaves one privileged-action audit row on the acting admin's site
+    (SECURITY 7.5) — the customer-facing event log stays untouched, and the
+    delivery worker stopping with the chains means a pause can page nobody.
+    """
+    runtime: Runtime = request.app.state.runtime
+    site_id = int(claims["site_id"])
+    before = runtime.paused
+    if body.paused:
+        await runtime.pause()
+    else:
+        await runtime.resume()
+    if runtime.paused != before:
+        actor = db.get(User, int(claims["sub"]))
+        write_audit(
+            db,
+            site_id=site_id,
+            user_id=int(claims["sub"]) if actor else None,
+            action="system.pause" if body.paused else "system.resume",
+            details={"paused": body.paused},
+        )
+    return {"paused": bool(runtime.paused)}
+
+
 @router.get("/system/health", response_model=HealthOut)
 def health() -> HealthOut:
     """Unauthenticated liveness probe. Exposes only status, version, uptime."""
@@ -82,7 +113,9 @@ def health() -> HealthOut:
 
 
 @router.get("/system/status")
-def status_route(claims: ClaimsDep, db: DbSessionDep, stats: StreamStatsDep) -> dict[str, Any]:
+def status_route(
+    claims: ClaimsDep, db: DbSessionDep, stats: StreamStatsDep, request: Request
+) -> dict[str, Any]:
     """Hardware/model/camera summary for the dashboard.
 
     Camera rows join the stored row with live MJPEG stream stats: `live`
@@ -137,6 +170,11 @@ def status_route(claims: ClaimsDep, db: DbSessionDep, stats: StreamStatsDep) -> 
         "hardware_tier": _TIER,
         "hardware": _HARDWARE,
         "model": _MODEL,
+        # Present only when first-run bootstrap degraded (D6-4): an absent
+        # field reads as "healthy", matching the omission style above.
+        **({"runtime_reason": bootstrap.last_reason} if bootstrap.last_reason else {}),
+        # Tray pause state (D6-6): the dashboard renders the banner from this.
+        "paused": bool(request.app.state.runtime.paused),
         "cameras": rows,
         "stats": {
             "cameras_total": camera_count,

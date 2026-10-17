@@ -77,6 +77,13 @@ class Runtime:
         self._bridged: set[int] = set()
         self._latches: dict[int, QuotaLatch] = {}
         self.cameras: dict[str, dict[str, Any]] = {}
+        # Lifecycle state (pause/resume, D6-6): `_running` means chains are
+        # up; `_paused` is the panic-button state the tray reads. Every
+        # transition goes through `_lifecycle`, so pause/resume/start/stop
+        # never interleave.
+        self._paused = False
+        self._running = False
+        self._lifecycle = asyncio.Lock()
 
     @property
     def hub(self) -> AlertHub:
@@ -85,10 +92,37 @@ class Runtime:
             self._hub = get_alert_hub()
         return self._hub
 
+    @property
+    def paused(self) -> bool:
+        """True between pause() and resume()/stop() (D6-6)."""
+        return self._paused
+
+    async def pause(self) -> None:
+        """Panic button: stop every chain; idempotent, no-op when paused."""
+        async with self._lifecycle:
+            if self._paused:
+                return
+            self._paused = True
+            await self._stop_inner()
+
+    async def resume(self) -> None:
+        """Reopen the chains; a no-op while running (idempotent)."""
+        async with self._lifecycle:
+            if self._paused:
+                self._paused = False
+                await self._start_inner()
+            elif not self._running:
+                await self._start_inner()
+
     async def start(self) -> None:
         """Construct and launch everything; no-op when disabled (D10)."""
-        if not self._enabled:
+        async with self._lifecycle:
+            await self._start_inner()
+
+    async def _start_inner(self) -> None:
+        if not self._enabled or self._running:
             return
+        self._running = True
         self._hub = get_alert_hub()
         self._detector = self._open_detector_safely()
         manager = StreamManager(self._manager_source_factory(), _noop_sink)
@@ -125,6 +159,12 @@ class Runtime:
 
     async def stop(self) -> None:
         """Cancel loops, stop pipelines, close detector and handlers."""
+        async with self._lifecycle:
+            await self._stop_inner()
+            self._paused = False
+
+    async def _stop_inner(self) -> None:
+        self._running = False
         for task in self._tasks:
             task.cancel()
         for task in self._tasks:

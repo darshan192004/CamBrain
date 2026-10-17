@@ -9,11 +9,10 @@ testable offline with ``FileSource`` and exercises the real RTSP path with
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
-import contextlib
 import threading
 from collections.abc import Callable
 
+from app.core.logging import get_logger
 from app.services.stream.pipeline import (
     CameraConfig,
     CameraPipeline,
@@ -21,6 +20,11 @@ from app.services.stream.pipeline import (
     PipelineStatus,
 )
 from app.services.stream.source import FrameSource
+
+# Rule 4: redaction is mandatory at the logging call site — the structlog
+# logger routes the message, args, and exc_info through the project's
+# redaction chain; stdlib logging only inherits the foreign-record path.
+log = get_logger(__name__)
 
 SourceFactory = Callable[[CameraConfig], FrameSource]
 
@@ -31,13 +35,13 @@ class _CameraWorker:
     def __init__(self, camera_id: str) -> None:
         self.camera_id = camera_id
         self.loop = asyncio.new_event_loop()
+        self.task: asyncio.Task[None] | None = None
         self.thread = threading.Thread(
             target=self.loop.run_forever,
             name=f"camera-{camera_id}",
             daemon=True,
         )
         self.pipeline: CameraPipeline | None = None
-        self.future: concurrent.futures.Future[None] | None = None
 
 
 class StreamManager:
@@ -81,10 +85,18 @@ class StreamManager:
             source = self._factory(config)
             worker.pipeline = CameraPipeline(config, source, sink or self._sink, on_frame=on_frame)
             worker.thread.start()
-            worker.future = asyncio.run_coroutine_threadsafe(worker.pipeline.run(), worker.loop)
-            worker.future.add_done_callback(
-                lambda fut: self._on_done(config.camera_id, worker, fut)
-            )
+
+            def _spawn() -> None:
+                # Create the task on its own loop thread: only the owning
+                # loop can cancel a coroutine, and the done callback parks an
+                # idle loop when the pipeline ends on its own.
+                pipeline = worker.pipeline
+                assert pipeline is not None  # set two lines above
+                worker.task = worker.loop.create_task(pipeline.run())
+                task = worker.task
+                task.add_done_callback(lambda _t: self._on_done(config.camera_id, worker, task))
+
+            worker.loop.call_soon_threadsafe(_spawn)
             self._workers[config.camera_id] = worker
 
     def remove_camera(self, camera_id: str) -> bool:
@@ -109,21 +121,39 @@ class StreamManager:
             self.remove_camera(camera_id)
 
     def _stop_worker(self, worker: _CameraWorker) -> None:
-        if worker.future is not None:
-            worker.future.cancel()
-        # Give the loop 50 ms to deliver the cancellation (so the pipeline's
-        # finally closes the source), then stop the run_forever thread.
-        worker.loop.call_soon_threadsafe(lambda: worker.loop.call_later(0.05, worker.loop.stop))
+        # Cancel the task ON its own loop thread (only the owning loop may
+        # cancel a coroutine) and let the join(5s) below return once the task
+        # has finalized: the done callback stops the loop, so by the time stop
+        # returns the generator's finally has run and the source is closed —
+        # pause() is airtight, reattaching never finds a mid-flight chain.
+
+        def _cancel_on_loop() -> None:
+            if worker.task is None:
+                worker.loop.call_later(0.02, _cancel_on_loop)
+                return
+            if worker.task.done():
+                worker.loop.stop()
+                return
+            worker.task.cancel()
+            # The done callback in _on_done early-returns on CancelledError,
+            # so parking the loop here belongs to the stop path.
+            worker.task.add_done_callback(lambda _t: worker.loop.stop())
+
+        worker.loop.call_soon_threadsafe(_cancel_on_loop)
         worker.thread.join(timeout=5.0)
 
     def _on_done(
         self,
         camera_id: str,
         worker: _CameraWorker,
-        fut: concurrent.futures.Future[None],
+        task: asyncio.Task[None],
     ) -> None:
-        with contextlib.suppress(concurrent.futures.CancelledError):
-            fut.exception()  # swallow CancelledError and failures; log held them
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            return
+        if exc is not None:
+            log.error("camera %s pipeline died: %r", camera_id, exc, exc_info=exc)
         with self._lock:
             # Identity guard: a removed-and-re-added camera must not have its
             # fresh worker deleted by the old one's late callback.

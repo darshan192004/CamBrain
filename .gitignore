@@ -55,3 +55,6 @@ desktop.ini
 # RTSP harness state — regenerated per test session
 backend/tests/rtsp/.mediamtx/
 backend/tests/rtsp/.tools/
+# Engine staging for the Tauri bundler — built by pyinstaller from engine.spec
+frontend/src-tauri/resources/engine/
+

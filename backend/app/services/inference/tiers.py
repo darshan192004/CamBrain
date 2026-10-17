@@ -12,10 +12,27 @@ from __future__ import annotations
 import ctypes
 import os
 import platform
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def models_dir() -> Path:
+    """Where the resolved tier's weights live for this launch.
+
+    Dev reads the repo's models tree; the frozen engine (plan T5) points at
+    app data (D6-3), which is also where D6-4's bootstrap downloads land.
+    """
+    if getattr(sys, "frozen", False):  # PyInstaller onedir / onefile
+        appdata = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+        return appdata / "CamBrain" / "models"
+    return REPO_ROOT / "models"
+
+
+# Kept as an import-time alias for tests and callers that anchor the repo
+# layout; resolve_tier uses models_dir() so packaging redirects cleanly.
 MODELS_DIR = REPO_ROOT / "models"
 
 # winnt.h processor-feature constants. An unknown constant returns 0 (False),
@@ -85,4 +102,4 @@ def resolve_tier(caps: Capabilities | None = None) -> tuple[str, Path, int]:
     """Return (tier, absolute model path, input size) for this box."""
     resolved = tier_for(caps or probe_capabilities())
     model_file, input_size = TIER_SPECS[resolved]
-    return resolved, MODELS_DIR / model_file, input_size
+    return resolved, models_dir() / model_file, input_size

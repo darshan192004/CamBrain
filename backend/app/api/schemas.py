@@ -383,9 +383,13 @@ class RuleTestOut(BaseModel):
 
 
 class RuleTestRequest(BaseModel):
-    """Optional event selection; omit for the camera's most recent event."""
+    """A base64 JPEG still to detect live, or event selection (API A7.3).
+
+    Omitting both replays the camera's most recent event.
+    """
 
     event_id: int | None = None
+    image_b64: str | None = None
 
 
 class EventDetectionOut(BaseModel):

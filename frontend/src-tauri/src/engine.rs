@@ -66,15 +66,40 @@ struct EngineEnv {
 }
 
 fn engine_env() -> EngineEnv {
+    // Packaged layout (D6-1 / plan T5): the installer drops the frozen
+    // engine next to the installed binary (.\engine\cambrian-engine.exe)
+    // and the supervisor spawns it when CAMBRAIN_ENGINE_CMD is absent.
+    // Dev and tests always set the env, so the repo fallback only matters
+    // for a bare `cargo run` on a dev box.
+    let engine_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("engine")));
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(PathBuf::from));
+    let packaged_exe = engine_dir.map(|dir| dir.join("cambrian-engine.exe"));
     EngineEnv {
         cmd: std::env::var("CAMBRAIN_ENGINE_CMD").unwrap_or_else(|_| {
-            "python -m uvicorn app.main:app --host 127.0.0.1 --port 8765".into()
+            if packaged_exe.as_ref().is_some_and(|exe| exe.is_file()) {
+                packaged_exe.clone().unwrap().to_string_lossy().into_owned()
+            } else {
+                "python -m uvicorn app.main:app --host 127.0.0.1 --port 8765".into()
+            }
         }),
         cwd: std::env::var("CAMBRAIN_ENGINE_CWD")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
-                // Dev layout: the manifest dir is src-tauri, so <repo>/backend.
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("backend")
+                if packaged_exe.is_some() {
+                    // Packaged: the engine reads absolute CAMBRAIN_* paths,
+                    // so the CWD only needs to exist.
+                    exe_dir.unwrap_or_else(appdata)
+                } else {
+                    // Dev layout: the manifest dir is src-tauri, so <repo>/backend.
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("..")
+                        .join("..")
+                        .join("backend")
+                }
             }),
         logs: appdata().join("logs"),
     }

@@ -37,8 +37,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     if settings.fetch_models:
         # Reasons live in bootstrap.last_reason, surfaced by /system/status.
-        # Runtime degrades on missing weights by itself (D6-4).
-        bootstrap.ensure_resolved_model()
+        # Runtime degrades on missing weights by itself (D6-4). The root is
+        # resolved per launch: repo layout in dev, app data when frozen.
+        bootstrap.ensure_resolved_model(root=bootstrap.data_root())
     runtime = Runtime()
     app.state.runtime = runtime
     await runtime.start()

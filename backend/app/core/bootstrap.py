@@ -16,6 +16,8 @@ than mutating it.
 
 from __future__ import annotations
 
+import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -24,6 +26,39 @@ from scripts.fetch_models import Asset, FetchError, fetch, load_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = REPO_ROOT / "models" / "manifest.json"
+
+
+def data_root() -> Path:
+    """Where model downloads live for THIS launch (D6-4 dest side).
+
+    Dev keeps the repo layout (E:\\...\\models). The frozen engine (plan T5)
+    resolves against app data (D6-3, `%LOCALAPPDATA%\\CamBrain`): the bundle
+    is read-only, so downloads land under that folder.
+    """
+    if getattr(sys, "frozen", False):  # PyInstaller onedir / onefile
+        return (
+            Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+            / "CamBrain"
+        )
+    return REPO_ROOT
+
+
+def bundle_root() -> Path:
+    """Where the pinned manifest + legal notice ship (read-only assets).
+
+    Dev: the repo models tree. Frozen (onedir): `_MEIPASS` is the `_internal`
+    folder next to the exe, mirroring the bundler's resource layout (see
+    engine.spec datas).
+    """
+    if getattr(sys, "frozen", False):  # PyInstaller onedir / onefile
+        return Path(getattr(sys, "_MEIPASS", "."))
+    return REPO_ROOT
+
+
+def resolve_manifest() -> Path:
+    """The pinned manifest for this launch."""
+    return bundle_root() / "models" / "manifest.json"
+
 
 # Set by ensure_resolved_model; read by the /system/status router so the
 # dashboard can explain a degraded runtime. Module-level because status does
@@ -42,9 +77,12 @@ def ensure_resolved_model(
     """
     global last_reason
     _tier, model_path, _input_size = resolve_tier()
+    manifest = resolve_manifest()
     last_reason = ensure_model(
         root=root,
         model_name=model_path.name,
+        manifest_path=manifest,
+        notice_path=manifest.parent / "LICENSE-MODEL-NOTICE",
         download=download,
     )
     return last_reason

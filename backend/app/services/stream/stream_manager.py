@@ -9,7 +9,6 @@ testable offline with ``FileSource`` and exercises the real RTSP path with
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import logging
 import threading
 from collections.abc import Callable
@@ -33,13 +32,13 @@ class _CameraWorker:
     def __init__(self, camera_id: str) -> None:
         self.camera_id = camera_id
         self.loop = asyncio.new_event_loop()
+        self.task: asyncio.Task[None] | None = None
         self.thread = threading.Thread(
             target=self.loop.run_forever,
             name=f"camera-{camera_id}",
             daemon=True,
         )
         self.pipeline: CameraPipeline | None = None
-        self.future: concurrent.futures.Future[None] | None = None
 
 
 class StreamManager:
@@ -83,10 +82,18 @@ class StreamManager:
             source = self._factory(config)
             worker.pipeline = CameraPipeline(config, source, sink or self._sink, on_frame=on_frame)
             worker.thread.start()
-            worker.future = asyncio.run_coroutine_threadsafe(worker.pipeline.run(), worker.loop)
-            worker.future.add_done_callback(
-                lambda fut: self._on_done(config.camera_id, worker, fut)
-            )
+
+            def _spawn() -> None:
+                # Create the task on its own loop thread: only the owning
+                # loop can cancel a coroutine, and the done callback parks an
+                # idle loop when the pipeline ends on its own.
+                pipeline = worker.pipeline
+                assert pipeline is not None  # set two lines above
+                worker.task = worker.loop.create_task(pipeline.run())
+                task = worker.task
+                task.add_done_callback(lambda _t: self._on_done(config.camera_id, worker, task))
+
+            worker.loop.call_soon_threadsafe(_spawn)
             self._workers[config.camera_id] = worker
 
     def remove_camera(self, camera_id: str) -> bool:
@@ -111,22 +118,36 @@ class StreamManager:
             self.remove_camera(camera_id)
 
     def _stop_worker(self, worker: _CameraWorker) -> None:
-        if worker.future is not None:
-            worker.future.cancel()
-        # Give the loop 50 ms to deliver the cancellation (so the pipeline's
-        # finally closes the source), then stop the run_forever thread.
-        worker.loop.call_soon_threadsafe(lambda: worker.loop.call_later(0.05, worker.loop.stop))
+        # Cancel the task ON its own loop thread (only the owning loop may
+        # cancel a coroutine) and let the join(5s) below return once the task
+        # has finalized: the done callback stops the loop, so by the time stop
+        # returns the generator's finally has run and the source is closed —
+        # pause() is airtight, reattaching never finds a mid-flight chain.
+
+        def _cancel_on_loop() -> None:
+            if worker.task is None:
+                worker.loop.call_later(0.02, _cancel_on_loop)
+                return
+            if worker.task.done():
+                worker.loop.stop()
+                return
+            worker.task.cancel()
+            # The done callback in _on_done early-returns on CancelledError,
+            # so parking the loop here belongs to the stop path.
+            worker.task.add_done_callback(lambda _t: worker.loop.stop())
+
+        worker.loop.call_soon_threadsafe(_cancel_on_loop)
         worker.thread.join(timeout=5.0)
 
     def _on_done(
         self,
         camera_id: str,
         worker: _CameraWorker,
-        fut: concurrent.futures.Future[None],
+        task: asyncio.Task[None],
     ) -> None:
         try:
-            exc = fut.exception()
-        except concurrent.futures.CancelledError:
+            exc = task.exception()
+        except asyncio.CancelledError:
             return
         if exc is not None:
             log.error("camera %s pipeline died: %r", camera_id, exc, exc_info=exc)

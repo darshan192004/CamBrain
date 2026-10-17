@@ -31,7 +31,7 @@ def test_csrf_blocks_missing_header(
     db_session: Session,
     seeded: tuple[Site, User, User],  # noqa: ARG001
 ) -> None:
-    """A mutating request without X-CambBrain-Client is 403 with the envelope."""
+    """A mutating request without X-CamBrain-Client is 403 with the envelope."""
     from app.api.deps import get_db
     from app.main import create_app
 
@@ -71,7 +71,7 @@ def test_csrf_blocks_bad_content_type(
         resp = bare.post(
             "/api/v1/auth/login",
             content=b"{}",
-            headers={"Content-Type": "text/plain", "X-CambBrain-Client": "tests"},
+            headers={"Content-Type": "text/plain", "X-CamBrain-Client": "tests"},
         )
         assert resp.status_code == 403
         assert resp.json()["error"]["code"] == "FORBIDDEN"

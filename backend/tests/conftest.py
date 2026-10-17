@@ -136,7 +136,7 @@ def client(
     with TestClient(
         app,
         base_url="http://testserver",
-        headers={"X-CambBrain-Client": "tests"},
+        headers={"X-CamBrain-Client": "tests"},
     ) as c:
         yield c
     app.dependency_overrides.clear()

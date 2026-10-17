@@ -119,7 +119,7 @@ def test_mutating_requires_client_header(
     db_session: Session,
     seeded: tuple[Site, User, User],  # noqa: ARG001
 ) -> None:
-    """A mutating request without X-CambBrain-Client is blocked (CSRF)."""
+    """A mutating request without X-CamBrain-Client is blocked (CSRF)."""
     from app.api.deps import get_db
     from app.main import create_app
 
@@ -129,7 +129,7 @@ def test_mutating_requires_client_header(
         yield db_session
 
     app.dependency_overrides[get_db] = _override_db
-    # This client has no default X-CambBrain-Client header.
+    # This client has no default X-CamBrain-Client header.
     with TestClient(app, base_url="http://testserver") as bare:
         # Missing client header -> rejected.
         resp = bare.post(
@@ -142,7 +142,7 @@ def test_mutating_requires_client_header(
         resp = bare.post(
             "/api/v1/auth/login",
             content=b"{}",
-            headers={"Content-Type": "text/plain", "X-CambBrain-Client": "tests"},
+            headers={"Content-Type": "text/plain", "X-CamBrain-Client": "tests"},
         )
         assert resp.status_code == 403
         assert resp.json()["error"]["code"] == "FORBIDDEN"

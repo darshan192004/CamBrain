@@ -1,7 +1,7 @@
 """CSRF and correlation-id middleware (API §1, SECURITY §4.5).
 
 CamBrain's dashboard is a browser app on localhost talking to a LAN-bound API.
-A cross-site form post cannot set `X-CambBrain-Client` or a JSON content-type,
+A cross-site form post cannot set `X-CamBrain-Client` or a JSON content-type,
 so requiring both on mutating requests is a complete CSRF defence here — no
 per-form tokens to mint or store.
 
@@ -20,7 +20,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 _MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
-_CLIENT_HEADER = "x-cambbrain-client"
+_CLIENT_HEADER = "x-cambrain-client"
 
 
 def _forbidden(message: str, request: Request) -> JSONResponse:
@@ -40,7 +40,7 @@ def _forbidden(message: str, request: Request) -> JSONResponse:
 
 
 class CsrfMiddleware(BaseHTTPMiddleware):
-    """Require the JSON content type and `X-CambBrain-Client` on writes.
+    """Require the JSON content type and `X-CamBrain-Client` on writes.
 
     A bodyless mutating request (e.g. `POST /cameras/{id}/test`) cannot carry
     a form payload, so only the client header is required there; the JSON
@@ -62,7 +62,7 @@ class CsrfMiddleware(BaseHTTPMiddleware):
                     )
             if _CLIENT_HEADER not in request.headers:
                 return _forbidden(
-                    "CSRF: mutating requests require the X-CambBrain-Client header",
+                    "CSRF: mutating requests require the X-CamBrain-Client header",
                     request,
                 )
         return await call_next(request)

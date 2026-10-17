@@ -28,7 +28,7 @@ describe("request headers", () => {
     await get("/cameras");
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/v1/cameras");
-    expect(init.headers["X-CambBrain-Client"]).toBe("cambrain-dashboard");
+    expect(init.headers["X-CamBrain-Client"]).toBe("cambrain-dashboard");
     expect(init.headers.Authorization).toBe("Bearer access-1");
     expect(init.body).toBeUndefined();
 
@@ -48,7 +48,7 @@ describe("request headers", () => {
       { auth: false },
     );
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
-    expect(fetchMock.mock.calls[0][1].headers["X-CambBrain-Client"]).toBe(
+    expect(fetchMock.mock.calls[0][1].headers["X-CamBrain-Client"]).toBe(
       "cambrain-dashboard",
     );
   });

@@ -212,14 +212,15 @@ by D6-2, recorded here for Arun.
 ## API contract notes for handover
 
 - Every mutating request (POST / PATCH / DELETE) must carry the CSRF header
-  `x-cambbrain-client` (exact spelling, double "b") plus
-  `Content-Type: application/json`; login included. GETs need only the
-  `Authorization: Bearer` token (except `GET /api/v1/system/health`, which is
-  anonymous). Known wart scheduled for cleanup: the constant lives in
-  `backend/app/api/middleware.py` (`_CLIENT_HEADER`) and currently carries
-  the same hardly-visible "cambbrain" misspelling — frontend and docs agree
-  on that exact value so the system is consistent; renaming it is a
-  backend+frontend contract change scheduled post-T8, not a silent fix.
+  `x-cambrain-client` plus `Content-Type: application/json`; login included.
+  GETs need only the `Authorization: Bearer` token (except
+  `GET /api/v1/system/health`, which is anonymous). History: the header
+  originally shipped with a `cambbrain` double-"b" misspelling; it was
+  renamed deliberately post-T8 in a backend+frontend contract fix (docs,
+  tests, and CORS allow-header renamed together). Bundles built before that
+  fix still expect the old spelling — an old installed app talks only to its
+  own bundled engine, so there is no cross-version client mismatch. The
+  constant lives in `backend/app/api/middleware.py` (`_CLIENT_HEADER`).
 - Auth: seeded admin `admin / cambrain-demo` on fresh DBs (installer first
   boot). Argon2id hashes; sessions are bearer tokens.
 - Notifier kinds are `telegram` and `whatsapp` only; capture/regression

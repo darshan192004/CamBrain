@@ -109,6 +109,6 @@ def test_patch_password(client: TestClient, admin_headers: dict[str, str], db_se
     resp = client.post(
         "/api/v1/auth/login",
         json={"username": "viewer", "password": "new-password-99"},
-        headers={"X-CambBrain-Client": "tests"},
+        headers={"X-CamBrain-Client": "tests"},
     )
     assert resp.status_code == 200

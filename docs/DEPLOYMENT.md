@@ -184,6 +184,14 @@ python -m pytest backend/tests/test_soak.py -q -m slow
   A restart row with `exit code: 3` points at bind conflicts on `:8765`
   (another engine instance running); `No space left on device` points at the
   system drive, not the engine (and cannot happen in packaged mode — onedir).
+- **Do not add `faulthandler_timeout` to the gate run** (gates box TMT 2026-10-17): the
+  soak is a single multi-hour test, pytest's faulthandler fires at the limit by
+  dumping a traceback and *continuing*, so the flag yields a polluted log and
+  zero failure-fast value. Concurrent-run guard: a killed pytest can leave its
+  engine child alive-bind conflict at the next launch's port probe or doubles
+  the CPU load the trend invariant sees; before relaunching, confirm the
+  prior run's process tree is gone (`Get-Process`, `ProcessName -match`
+  `cambrian`/`python`) rather than trusting the shell's exit.
 
 ### Windows service (post-MVP alternative)
 

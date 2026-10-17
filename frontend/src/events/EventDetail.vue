@@ -1,9 +1,11 @@
 <script setup>
 // Event detail body (plan 4.16): the still with detection boxes drawn in
 // frame-percent space, the per-detection list, acknowledge, and the clip —
-// hidden behind the Phase 5 note until `has_clip` is ever true (plan D6).
+// fetched through the authenticated client like the still (a `<video src>`
+// cannot carry the Authorization header) and shown once `has_clip` is true.
 import { onBeforeUnmount, onMounted, ref } from "vue";
 
+import { fetchClip } from "./clip.js";
 import DetectionOverlay from "./DetectionOverlay.vue";
 import { severityClass } from "./severity.js";
 import { fetchThumbnail } from "./thumbnail.js";
@@ -27,6 +29,7 @@ const emit = defineEmits(["ack"]);
 
 const stillUrl = ref("");
 const stillFailed = ref(false);
+const clipUrl = ref("");
 
 onMounted(async () => {
   try {
@@ -34,11 +37,21 @@ onMounted(async () => {
   } catch {
     stillFailed.value = true;
   }
+  if (props.event.has_clip) {
+    try {
+      clipUrl.value = await fetchClip(props.event.clip_url);
+    } catch {
+      // No clip player — the note below covers both "recording" and failure.
+    }
+  }
 });
 
 onBeforeUnmount(() => {
   if (stillUrl.value) {
     URL.revokeObjectURL(stillUrl.value);
+  }
+  if (clipUrl.value) {
+    URL.revokeObjectURL(clipUrl.value);
   }
 });
 
@@ -134,9 +147,9 @@ function pct(confidence) {
     <div class="grid gap-2">
       <h3 class="text-sm font-semibold text-text-primary">Clip</h3>
       <video
-        v-if="event.has_clip"
+        v-if="clipUrl"
         data-testid="event-clip"
-        :src="event.clip_url"
+        :src="clipUrl"
         controls
         class="w-full rounded-lg border border-border"
       ></video>

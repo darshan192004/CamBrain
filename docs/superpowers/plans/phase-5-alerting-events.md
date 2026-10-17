@@ -4208,7 +4208,7 @@ Gate script follows `.tmp/gate-4.18.mjs` conventions (BASE, screenshots dir, hea
 - [x] **Step 2: Loops green.**
 - [x] **Step 3: Gate run** — all screenshots captured, capture file proves sendPhoto.
 - [x] **Step 4: Commit docs + tasks ticks** — `docs(phase-5): amend living docs and tick tasks`.
-- [ ] **Step 5: PR + review + merge** — conventional body, no Co-Authored-By.
+- [x] **Step 5: PR + review + merge** — conventional body, no Co-Authored-By. (PR #13; PR-Agent `/review` findings disposed in `59cfba1`.)
 
 ---
 
@@ -4233,7 +4233,7 @@ Gate script follows `.tmp/gate-4.18.mjs` conventions (BASE, screenshots dir, hea
 | 15 Still replay | done | 2026-10-17 | `5fb7f55` | replay with injectable detector (still path) |
 | 16 Frontend WS | done | 2026-10-17 | `10659c3` | ticker via WS + poll fallback; `ws: true` proxy |
 | 17 Notifiers UI | done | 2026-10-17 | `f8d35ac` | write-only token form; Test button; 178 frontend tests |
-| 18 Docs + gate + PR | in progress | 2026-10-17 | gate: `.tmp/gate-5-*.png` | Steps 1–4 done; Step 5 (PR/review/merge) pending |
+| 18 Docs + gate + PR | done | 2026-10-17 | `9f3c5f3` + `59cfba1`; PR #13 | Steps 1–5 + gate green: dims 768×432, 107 WS `event` frames, sendPhoto 15238 B (bot token in path, chat_id in body), clip played inline t=2.52s (gate-found clip-auth bug fixed in `0126244`), retention pruned 1 row + files gone; /review findings disposed (cross-tenant sweep, batch starvation, notifier test 500) |
 
 ## Gates
 
@@ -4254,9 +4254,9 @@ Gate script follows `.tmp/gate-4.18.mjs` conventions (BASE, screenshots dir, hea
 
 ## Definition of done
 
-- [ ] Every task's acceptance checkboxes ticked in this file; ledger complete.
-- [ ] Backend: `pytest -m "not rtsp and not slow"` green (baseline 276 + new), ruff + mypy clean; migrations upgrade/downgrade roundtrip (`p5a`, `p5b`) green.
-- [ ] Frontend: format + lint + `npm test` + `npm run build` green.
-- [ ] `docs/API.md`, `docs/DATABASE.md` match shipped behaviour; `docs/tasks.md` Phase 5 all ticked.
-- [ ] Gate walkthrough evidence recorded; verification-matrix rows pass.
-- [ ] PR reviewed by PR-Agent `/review`, findings dispositioned, merged; branch deleted.
+- [x] Every task's acceptance checkboxes ticked in this file; ledger complete.
+- [x] Backend: `pytest -m "not rtsp and not slow"` green (337 + review-disposition tests), ruff + mypy clean; migrations upgrade/downgrade roundtrip (`p5a`, `p5b`) green.
+- [x] Frontend: format + lint + `npm test` + `npm run build` green (178 tests).
+- [x] `docs/API.md`, `docs/DATABASE.md` match shipped behaviour; `docs/tasks.md` Phase 5 all ticked.
+- [x] Gate walkthrough evidence recorded; verification-matrix rows pass (matrix sits in unit tests; `test_backoff_grows_and_caps`, `test_notifier_token_is_encrypted_and_masked`, `test_cross_site_broadcast_never_arrives`, `test_offline_event_survives`, ring/quota rows in their suites).
+- [x] PR reviewed by PR-Agent `/review`, findings dispositioned, merged; branch deleted. Review + disposition: PR #13 (comment 2026-10-17); fixes `59cfba1`.

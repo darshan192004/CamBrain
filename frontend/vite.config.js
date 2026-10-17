@@ -16,7 +16,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": { target: "http://127.0.0.1:8765", changeOrigin: false },
+      // `ws: true` on /api is what makes /api/v1/ws/alerts reachable in
+      // dev — an HTTP proxy entry does not forward the upgrade handshake.
+      "/api": {
+        target: "http://127.0.0.1:8765",
+        changeOrigin: false,
+        ws: true,
+      },
       "/ws": { target: "ws://127.0.0.1:8765", ws: true },
     },
   },

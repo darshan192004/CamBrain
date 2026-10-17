@@ -1,10 +1,12 @@
 <script setup>
-// Event ticker (design §4, plan D6 — no websocket): polls the five
-// newest events every 10s and renders them into the shell's aria-live
-// region; a click opens the event detail. The interval is cleared on
-// unmount so leaving the screen never leaks a poller.
+// Event ticker (design §4): opens the /ws/alerts socket for immediate
+// updates (API A3) while keeping the 10s poll as the degradation path —
+// a dead socket falls back to Phase-4 polling instead of silence. Both
+// timers are torn down on unmount so leaving the screen never leaks a
+// poller or a reconnect loop.
 import { onBeforeUnmount, onMounted } from "vue";
 
+import { connectAlerts } from "../api/alertsSocket.js";
 import { useEventsStore } from "../stores/events.js";
 
 const POLL_MS = 10_000;
@@ -12,10 +14,15 @@ const POLL_MS = 10_000;
 const store = useEventsStore();
 
 let timer = null;
+let socketHandle = null;
 
 onMounted(() => {
   store.load();
   timer = setInterval(() => store.load(), POLL_MS);
+  socketHandle = connectAlerts({
+    onEvent: (event) => store.upsert(event),
+    onOpen: () => store.load(), // resync after every (re)connect
+  });
 });
 
 onBeforeUnmount(() => {
@@ -23,6 +30,8 @@ onBeforeUnmount(() => {
     clearInterval(timer);
     timer = null;
   }
+  socketHandle?.close();
+  socketHandle = null;
 });
 </script>
 

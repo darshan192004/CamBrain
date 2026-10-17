@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 
 from app.api.deps import ClaimsDep, DbSessionDep, require_role_dep
 from app.api.schemas import HealthOut
+from app.core import bootstrap
 from app.core.config import settings
 from app.db.models.camera import Camera
 from app.db.models.event import Event
@@ -137,6 +138,9 @@ def status_route(claims: ClaimsDep, db: DbSessionDep, stats: StreamStatsDep) -> 
         "hardware_tier": _TIER,
         "hardware": _HARDWARE,
         "model": _MODEL,
+        # Present only when first-run bootstrap degraded (D6-4): an absent
+        # field reads as "healthy", matching the omission style above.
+        **({"runtime_reason": bootstrap.last_reason} if bootstrap.last_reason else {}),
         "cameras": rows,
         "stats": {
             "cameras_total": camera_count,

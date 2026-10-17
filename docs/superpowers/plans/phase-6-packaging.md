@@ -187,8 +187,9 @@ docs/
 
 - [ ] **Step 1 (TDD).** `test_ensure_model_downloads_and_verifies`: tmp data-dir
   without an `.onnx` → `ensure_models()` fetches the **resolved tier's** asset
-  via manifest URL, verifies SHA-256, writes a `LICENSE-MODEL-NOTICE` provenance
-  line — network mocked at the requests layer (no fixture weights in-repo).
+  via manifest URL, verifies SHA-256, verifies the hand-maintained
+  `LICENSE-MODEL-NOTICE` names the asset (legal text is verified, never
+  mutated) — network mocked at the requests layer (no fixture weights in-repo).
 - [ ] **Step 2 (TDD).** `test_checksum_mismatch_redownloads_once_then_degrades`:
   corrupt the file with wrong hash → one re-download, then engine degrades (runtime
   off, API up) with a reason string.
@@ -339,7 +340,7 @@ is new and load-bearing.
 
 | Task | Status | Date | Evidence | Notes |
 |---|---|---|---|---|
-| 1 First-run bootstrap | pending | | | |
+| 1 First-run bootstrap | done | 2026-10-17 | `test_bootstrap.py` 8 green; suite 349+1skip; ruff/mypy(app) clean; `feat(core)` commit below | D6-4 refit: notice VERIFIED not mutated; knob `CAMBRAIN_FETCH_MODELS` (conftest=0); degrade reasons via `bootstrap.last_reason` → `/system/status.runtime_reason` |
 | 2 Tauri scaffold + child | pending | | | |
 | 3 Tray/pause/instance/autostart | pending | | | |
 | 4 Power-loss recovery | pending | | | |

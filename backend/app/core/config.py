@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     telegram_api_base: str = "https://api.telegram.org"
     # Phase-5 runtime: pipelines + alert chain. Tests force it off (conftest).
     runtime_enabled: bool = True
+    # First-run model bootstrap (D6-4); tests force it off (conftest) so the
+    # suite never hashes up to 96 MB of weights per TestClient lifespan.
+    fetch_models: bool = True
     model_path: Path = Path(__file__).resolve().parents[3] / "models" / "yolox_nano.onnx"
     model_input_size: int = 416
 

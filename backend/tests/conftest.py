@@ -18,6 +18,9 @@ os.environ.setdefault("CAMBRAIN_JWT_SECRET", "test-only-secret-do-not-use-in-pro
 # Runtime off in tests (D10): no sockets, no model files, no pipelines.
 # (env_prefix CAMBRAIN_ -> runtime_enabled reads CAMBRAIN_RUNTIME_ENABLED.)
 os.environ.setdefault("CAMBRAIN_RUNTIME_ENABLED", "0")
+# First-run model bootstrap off in tests (D6-4): the default false would hash
+# up to 96 MB of weights for every TestClient that opens a lifespan.
+os.environ.setdefault("CAMBRAIN_FETCH_MODELS", "0")
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402

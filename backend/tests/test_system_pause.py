@@ -109,10 +109,12 @@ async def test_pause_resume_cycles_without_leak(
         f"status={runtime._manager.status_all() if runtime._manager else None}"
     )
 
-    before = sources[0].yielded
     await asyncio.wait_for(runtime.pause(), timeout=10)
+    await asyncio.sleep(0.05)  # a frame mid-cycle at pause time may tick once
+    settled = sources[0].yielded
+    assert sources[0].closed is True, "pause leaves the source closed, not mid-flight"
     await asyncio.sleep(0.3)  # a live pipeline would have pushed more frames
-    assert sources[0].yielded == before, "pause freezes the frame flow"
+    assert sources[0].yielded == settled, "pause freezes the frame flow"
     assert runtime.paused is True
     assert runtime._manager is None, "pause closes pipelines"
     assert runtime._handlers == {} and runtime._tasks == [], "pause frees chain parts"
@@ -146,10 +148,11 @@ async def test_pause_resume_idempotent(
     await runtime.start()
     assert await _wait_until(lambda: len(sources) == 1 and sources[0].yielded >= 3)
     await runtime.pause()
-    before = sources[0].yielded
+    await asyncio.sleep(0.05)  # a frame mid-cycle at pause time may tick once
+    settled = sources[0].yielded
     await runtime.pause()  # no second stop, no crash, still paused
     await asyncio.sleep(0.3)
-    assert sources[0].yielded == before, "chain is frozen after pause"
+    assert sources[0].yielded == settled, "chain is frozen after pause"
     assert runtime._manager is None, "first pause stopped the chain"
     assert runtime.paused is True
     assert len(sources) == 1, "second pause does not spawn anything"

@@ -159,14 +159,14 @@ Phases are sequenced so that **each phase ends with something demonstrable**. No
 
 ## Phase 6 — Packaging & operations
 
-- [ ] Tauri v2 — tray icon, autostart on boot, single instance
-- [ ] Windows installer (NSIS or MSI) + silent install for integrators
-- [ ] Service starts without user login
-- [ ] Recovery after power loss
-- [ ] Model download on first run with checksum verification
-- [ ] `capabilities.py` — tier detection surfaced in System settings
-- [ ] 24h soak test — flat memory, stable FPS, no leaked handles
-- [ ] Installer handover guide for Arun
+- [x] Tauri v2 — tray icon, autostart on boot, single instance
+- [x] Windows installer (NSIS or MSI) + silent install for integrators
+- [ ] Service starts without user login — deferred by plan D6-2: MVP autostart is the Run key + logged-in session (tray is the product); the task-scheduler / true-service alternative is documented in DEPLOYMENT.md
+- [x] Recovery after power loss
+- [x] Model download on first run with checksum verification
+- [x] `capabilities.py` — tier detection surfaced in System settings
+- [ ] 24h soak test — flat memory, stable FPS, no leaked handles — scaled soak green (test_soak.py); the 24h gate run itself is the T8 manual gate item
+- [x] Installer handover guide for Arun
 
 ---
 

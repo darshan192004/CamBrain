@@ -90,9 +90,13 @@ class DeliveryWorker:
             db.close()
 
     async def sweep_once(self) -> int:
-        """Deliver every due pending/failed event once; returns delivered count."""
+        """Deliver every due pending/failed event once; returns delivered count.
+
+        The scan looks past the first `batch` rows (8× window) because rows in
+        backoff keep occupying the oldest slots; delivering stops at `batch`
+        due events per sweep.
+        """
         db = self._session_factory()
-        delivered = 0
         try:
             now = self._now()
             events = (
@@ -100,12 +104,15 @@ class DeliveryWorker:
                     select(Event)
                     .where(Event.delivery_status.in_(RetryableStatus))
                     .order_by(Event.id)
-                    .limit(self._batch)
+                    .limit(self._batch * 8)
                 )
                 .scalars()
                 .all()
             )
+            delivered = 0
             for event in events:
+                if delivered >= self._batch:
+                    break
                 if event.last_attempt_at is not None:
                     elapsed = (now - event.last_attempt_at).total_seconds()
                     if elapsed < backoff_s(event.delivery_attempts, cap_s=self._cap_s):

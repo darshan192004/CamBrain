@@ -164,21 +164,37 @@ def delete_notifier(notifier_id: int, claims: AdminDep, db: DbSessionDep) -> Res
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _build_notifier(entry: dict[str, Any]) -> TelegramNotifier:
-    """Construct a TelegramNotifier from a stored notifier_config entry."""
-    config = entry.get("config", {})
-    token = decrypt(str(config["bot_token_enc"]))
-    return TelegramNotifier(bot_token=token, chat_id=str(config.get("chat_id", "")))
+def _build_notifier(entry: dict[str, Any]) -> TelegramNotifier | None:
+    """Construct the TelegramNotifier for a stored entry, None when unusable.
+
+    A token-less telegram entry (or any non-telegram kind) must not raise —
+    the test endpoint answers a handled failure, mirroring how the delivery
+    worker's `_build_notifiers` skips such entries.
+    """
+    if entry.get("kind") != "telegram":
+        return None
+    config = entry.get("config") or {}
+    token_enc = config.get("bot_token_enc")
+    if not token_enc:
+        return None
+    return TelegramNotifier(
+        bot_token=decrypt(str(token_enc)),
+        chat_id=str(config.get("chat_id", "")),
+    )
 
 
 @router.post("/notifiers/test")
 async def test_notifier(claims: AdminDep, db: DbSessionDep) -> dict[str, Any]:
     """Send a real test message; Telegram's response verbatim (API ASystem)."""
     entries = [e for e in _notifiers(_site(db, claims)) if e.get("enabled", True)]
-    if not entries:
-        return {"ok": False, "error": "no enabled notifiers configured"}
     try:
-        response = await _build_notifier(entries[0]).test_message()
+        notifier = next((n for n in (_build_notifier(e) for e in entries) if n is not None), None)
+        if notifier is None:
+            return {
+                "ok": False,
+                "error": "no enabled Telegram notifier with a stored token",
+            }
+        response = await notifier.test_message()
     except TelegramError as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": True, "response": response}

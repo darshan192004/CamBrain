@@ -67,6 +67,27 @@ async def test_sweep_delivers_due_event(db_session, seeded) -> None:
     assert row.delivered_at is not None and row.last_attempt_at is not None
 
 
+async def test_backoff_slots_do_not_starve_a_fresh_event(db_session, seeded) -> None:
+    """25 old events in backoff must not occupy the batch: a new pending row delivers."""
+    now = datetime(2026, 10, 6, 22, 0)
+    for _i in range(25):
+        _pending_event(
+            db_session,
+            seeded,
+            attempts=5,
+            last_attempt=now - timedelta(minutes=2),  # backoff 160s, not yet due
+        )
+    fresh = _pending_event(db_session, seeded)
+    notifier = FakeNotifier()
+    worker = DeliveryWorker(
+        session_factory=lambda: db_session,
+        notifier_for=lambda _site_id: [notifier],
+        now=lambda: now,
+    )
+    assert await worker.sweep_once() == 1
+    assert notifier.sent == [fresh.id], "backoff rows wedged the batch"
+
+
 async def test_failed_delivery_retries_forever_with_backoff(db_session, seeded) -> None:
     event = _pending_event(db_session, seeded, attempts=3)
     worker = DeliveryWorker(

@@ -174,3 +174,47 @@ def test_notifier_test_endpoint_reports_failure(
 def test_viewer_cannot_create_notifier(client: TestClient, viewer_headers: dict[str, str]) -> None:
     resp = client.post("/api/v1/notifiers", json={"kind": "telegram"}, headers=viewer_headers)
     assert resp.status_code == 403
+
+
+def test_notifier_test_without_stored_token_is_handled(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """A token-less entry must not 500 (PR-Agent review finding, 2026-10-17)."""
+    client.post(
+        "/api/v1/notifiers",
+        json={"kind": "telegram", "enabled": True, "config": {"chat_id": "42"}},
+        headers=admin_headers,
+    )
+    res = client.post("/api/v1/notifiers/test", headers=admin_headers)
+    assert res.status_code == 200 and res.json()["ok"] is False
+    assert "stored token" in res.json()["error"]
+
+
+def test_notifier_test_skips_unusable_kinds(
+    client: TestClient, admin_headers: dict[str, str], monkeypatch
+) -> None:
+    """A webhook entry first in the list must not break testing the telegram one."""
+    from app.api.routers import settings as settings_router
+
+    class FakeNotifier:
+        async def test_message(self):
+            return {"ok": True, "result": {"message_id": 9}}
+
+    monkeypatch.setattr(settings_router, "_build_notifier", lambda _entry: FakeNotifier())
+    client.post(
+        "/api/v1/notifiers",
+        json={"kind": "webhook", "enabled": True, "config": {"url": "https://x.invalid"}},
+        headers=admin_headers,
+    )
+    client.post(
+        "/api/v1/notifiers",
+        json={
+            "kind": "telegram",
+            "enabled": True,
+            "config": {"chat_id": "42", "bot_token": "T"},
+        },
+        headers=admin_headers,
+    )
+    res = client.post("/api/v1/notifiers/test", headers=admin_headers)
+    assert res.status_code == 200 and res.json()["ok"] is True
+    assert res.json()["response"]["result"]["message_id"] == 9

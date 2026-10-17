@@ -88,15 +88,19 @@ def prune_events(
 def sweep_orphans(
     db: Session,
     *,
-    site_id: int,
     media_root: Path | None = None,
     min_age_s: float = ORPHAN_MIN_AGE_S,
     now: datetime | None = None,
 ) -> int:
-    """Remove media files older than min_age with no matching event row."""
+    """Remove media files older than min_age with no matching event row.
+
+    The clip/still folders are shared by every site (one media root), so a
+    file is referenced if ANY event still points at it — sweeping for one
+    site must never unlink another site's file.
+    """
     root = (media_root or settings.media_root).resolve()
     stamp = _now(now).timestamp() - min_age_s
-    referenced = {p for folder in ("clips", "stills") for p in _referenced(db, site_id, folder)}
+    referenced = {p for folder in ("clips", "stills") for p in _referenced(db, folder)}
     removed = 0
     for folder in ("clips", "stills"):
         directory = root / folder
@@ -115,11 +119,9 @@ def sweep_orphans(
     return removed
 
 
-def _referenced(db: Session, site_id: int, folder: str) -> set[str]:
-    """Basename set of clip/still paths this site's events still point at."""
-    rows = db.execute(
-        select(Event.clip_path, Event.thumbnail_path).where(Event.site_id == site_id)
-    ).all()
+def _referenced(db: Session, folder: str) -> set[str]:
+    """Basename set of clip/still paths any site's events still point at."""
+    rows = db.execute(select(Event.clip_path, Event.thumbnail_path)).all()
     names: set[str] = set()
     prefix = f"{folder}/"
     for clip, thumb in rows:
@@ -153,7 +155,7 @@ class RetentionRunner:
         db = self._session_factory()
         try:
             deleted = prune_events(db, site_id=self._site_id, media_root=self._media_root)
-            sweep_orphans(db, site_id=self._site_id, media_root=self._media_root)
+            sweep_orphans(db, media_root=self._media_root)
             return deleted
         finally:
             db.close()

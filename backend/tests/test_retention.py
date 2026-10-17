@@ -114,7 +114,6 @@ def test_retention_days_zero_means_nothing_pruned(db_session, tmp_path: Path) ->
 
 
 def test_orphan_sweep_removes_old_unreferenced_files(db_session, tmp_path: Path) -> None:
-    site = _site(db_session)
     (tmp_path / "clips").mkdir()
     orphan = tmp_path / "clips" / "999.mp4"
     orphan.write_bytes(b"v")
@@ -123,25 +122,33 @@ def test_orphan_sweep_removes_old_unreferenced_files(db_session, tmp_path: Path)
     os.utime(orphan, (old_ts, old_ts))
     fresh = tmp_path / "clips" / "1000.mp4"
     fresh.write_bytes(b"v")
-    removed = sweep_orphans(db_session, site_id=site.id, media_root=tmp_path, now=stale)
+    removed = sweep_orphans(db_session, media_root=tmp_path, now=stale)
     assert removed == 1 and not orphan.exists() and fresh.exists()
 
 
 def test_orphan_sweep_keeps_files_with_a_row(db_session, tmp_path: Path) -> None:
-    site = _site(db_session)
     (tmp_path / "clips").mkdir()
     kept = tmp_path / "clips" / "1.mp4"
     kept.write_bytes(b"v")
     old = datetime(2026, 10, 6, 12, 0) - timedelta(hours=40)
     os.utime(kept, (old.timestamp(), old.timestamp()))
-    _event(db_session, site, datetime(2026, 10, 1), clip="clips/1.mp4")
-    assert (
-        sweep_orphans(
-            db_session, site_id=site.id, media_root=tmp_path, now=datetime(2026, 10, 6, 12, 0)
-        )
-        == 0
-    )
+    _event(db_session, _site(db_session), datetime(2026, 10, 1), clip="clips/1.mp4")
+    assert sweep_orphans(db_session, media_root=tmp_path, now=datetime(2026, 10, 6, 12, 0)) == 0
     assert kept.exists()
+
+
+def test_orphan_sweep_never_deletes_another_sites_file(db_session, tmp_path: Path) -> None:
+    """Clips/stills share one media root, so references from ANY site protect a file."""
+    _site(db_session)
+    site_b = _site(db_session)
+    (tmp_path / "stills").mkdir()
+    other = tmp_path / "stills" / "77.jpg"
+    other.write_bytes(b"i")
+    old = datetime(2026, 10, 6, 12, 0) - timedelta(hours=40)
+    os.utime(other, (old.timestamp(), old.timestamp()))
+    _event(db_session, site_b, datetime(2026, 10, 1), thumb="stills/77.jpg")
+    assert sweep_orphans(db_session, media_root=tmp_path, now=datetime(2026, 10, 6, 12, 0)) == 0
+    assert other.exists(), "site A's sweep deleted site B's referenced file"
 
 
 def test_missing_files_never_break_a_prune(db_session, tmp_path: Path) -> None:

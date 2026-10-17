@@ -174,14 +174,15 @@ describe("event detail", () => {
     );
   });
 
-  it("renders a video bound to the opaque clip_url when has_clip is true", async () => {
-    const { wrapper } = await mountDetail({
+  it("fetches the clip through the authed client and plays it from a blob URL", async () => {
+    const { wrapper, calls } = await mountDetail({
       event: eventOut({ has_clip: true }),
     });
 
+    expect(calls.map((c) => c.url)).toContain("/api/v1/events/812/clip");
     const video = wrapper.find('[data-testid="event-clip"]');
     expect(video.exists()).toBe(true);
-    expect(video.attributes("src")).toBe("/api/v1/events/812/clip");
+    expect(video.attributes("src")).toBe("blob:still-812");
     expect(wrapper.find('[data-testid="clip-note"]').exists()).toBe(false);
   });
 

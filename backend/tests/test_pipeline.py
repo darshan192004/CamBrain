@@ -204,6 +204,7 @@ async def test_motion_to_alert_under_2s(clip_path: Path) -> None:
                 last_fired_at=None,
             )
         ],
+        camera_id=1,
         on_alert=record,
     )
     pipeline = CameraPipeline(

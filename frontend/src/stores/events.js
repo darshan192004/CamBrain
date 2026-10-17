@@ -1,8 +1,8 @@
 /**
  * Event list store (Pinia): holds the ticker's window — the five newest
- * events. Plan D6 has no websocket; the ticker re-runs `load` on an
- * interval and a failed poll keeps the last list rather than flashing the
- * strip empty.
+ * events. Live frames arrive over `/ws/alerts` and land through `upsert`;
+ * the 10s poll stays as the fallback, and a failed poll keeps the last
+ * list rather than flashing the strip empty.
  * @module stores/events
  */
 
@@ -38,6 +38,18 @@ export const useEventsStore = defineStore("events", {
       } catch {
         // Keep the previous window — a blip must not blank the ticker.
       }
+    },
+
+    /**
+     * Insert or replace one event from a WS frame; keeps five, newest
+     * first (D6: frames are idempotent, clients upsert by id).
+     * @param {object} event EventOut payload
+     * @returns {void}
+     */
+    upsert(event) {
+      if (!event?.id) return;
+      const rest = this.events.filter((e) => e.id !== event.id);
+      this.events = [event, ...rest].slice(0, 5);
     },
   },
 });

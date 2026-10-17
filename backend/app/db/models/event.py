@@ -34,8 +34,8 @@ class Event(Base):
     site_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    camera_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("cameras.id", ondelete="CASCADE"), nullable=False, index=True
+    camera_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("cameras.id", ondelete="CASCADE"), nullable=True, index=True
     )
     # NULL = auto/manual, survives rule deletion.
     rule_id: Mapped[int | None] = mapped_column(
@@ -55,6 +55,7 @@ class Event(Base):
     delivery_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_delivery_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     acknowledged_by: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True

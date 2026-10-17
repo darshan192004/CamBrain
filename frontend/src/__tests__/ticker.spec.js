@@ -21,6 +21,23 @@ const ITEMS = Array.from({ length: 7 }, (_, i) => ({
 
 const PAGE = { items: ITEMS, total: 7, limit: 5, offset: 0 };
 
+/** Minimal WebSocket double (shared by every ticker mount). */
+class FakeSocket {
+  static instances = [];
+  constructor(url, protocols) {
+    this.url = url;
+    this.protocols = protocols;
+    FakeSocket.instances.push(this);
+  }
+  close() {
+    this.closed = true;
+  }
+  // test helper
+  emit(data) {
+    this.onmessage?.({ data: JSON.stringify(data) });
+  }
+}
+
 /**
  * fetch double: the event page answers with the fixture, identity answers
  * from /auth/me.
@@ -52,6 +69,8 @@ const pollCount = (fetchMock) =>
 beforeEach(() => {
   setActivePinia(createPinia());
   clearTokens();
+  FakeSocket.instances = [];
+  vi.stubGlobal("WebSocket", FakeSocket);
 });
 
 afterEach(() => {
@@ -123,5 +142,48 @@ describe("EventTicker (plan D6 — no websocket)", () => {
 
     expect(wrapper.text()).toContain("No recent events.");
     wrapper.unmount();
+  });
+
+  it("opens the alerts socket on mount, upserts live events, and closes it", async () => {
+    setTokens(pair);
+    const fetchMock = tickerFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(globalThis, "setInterval").mockReturnValue(42);
+
+    const router = createAppRouter();
+    const wrapper = mount(EventTicker, {
+      global: { plugins: [createPinia(), router] },
+    });
+    await router.isReady();
+    await flushPromises();
+
+    expect(FakeSocket.instances).toHaveLength(1);
+    const sock = FakeSocket.instances[0];
+    expect(sock.protocols).toEqual(["cambrain.jwt.at"]);
+    expect(sock.url).toContain("/api/v1/ws/alerts");
+
+    // A live event frame renders immediately, without waiting for the poll.
+    sock.emit({
+      type: "event",
+      data: {
+        id: 42,
+        summary: "intruder at gate",
+        severity: "critical",
+        started_at: "2026-10-05T11:00:00Z",
+        acknowledged: false,
+        camera: { id: 1, name: "Gate" },
+      },
+    });
+    await flushPromises();
+    expect(wrapper.text()).toContain("intruder at gate");
+
+    // Every successful (re)open resyncs via GET /events (onOpen hook).
+    const before = pollCount(fetchMock);
+    sock.onopen?.();
+    await flushPromises();
+    expect(pollCount(fetchMock)).toBe(before + 1);
+
+    wrapper.unmount();
+    expect(sock.closed).toBe(true);
   });
 });

@@ -4,11 +4,14 @@
 // unauthenticated /system/health ping shown as service status. The live
 // backend may report empty hardware/model objects (detection not run yet),
 // which render as em dashes — an absent value reads as "unknown", never
-// as a broken page. Notifier wiring arrives in Phase 5.
+// as a broken page. Notifier configuration renders for admins below.
 import { computed, onMounted, ref } from "vue";
 
 import { get } from "../api/client.js";
+import { useAuthStore } from "../stores/auth.js";
+import NotifiersPanel from "./NotifiersPanel.vue";
 
+const auth = useAuthStore();
 const status = ref(null);
 const health = ref(null);
 const error = ref("");
@@ -191,5 +194,7 @@ onMounted(load);
         </div>
       </li>
     </ul>
+
+    <NotifiersPanel v-if="auth.isAdmin" />
   </section>
 </template>

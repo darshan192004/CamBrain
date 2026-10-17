@@ -46,6 +46,7 @@ async def test_real_alert_from_real_clip_under_2s(gate_clip_path: Path) -> None:
                 last_fired_at=None,
             )
         ],
+        camera_id=1,
         on_alert=record,
     )
     source = FileSource(gate_clip_path, loop=False)

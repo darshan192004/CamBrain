@@ -19,8 +19,10 @@ from app.api.schemas import (
     SettingsOut,
     SettingsPatch,
 )
+from app.core.crypto import decrypt, encrypt
 from app.core.errors import NotFoundError
 from app.db.models.site import Site
+from app.services.alerts.telegram import TelegramError, TelegramNotifier
 
 router = APIRouter(tags=["settings"])
 
@@ -53,14 +55,44 @@ def _notifiers(site: Site) -> list[dict[str, Any]]:
     return []
 
 
+def _seal(config: dict[str, Any]) -> dict[str, Any]:
+    """Encrypt a plaintext bot_token into bot_token_enc; pass the rest through."""
+    out = {k: v for k, v in config.items() if k != "bot_token"}
+    token = config.get("bot_token")
+    if isinstance(token, str) and token:
+        out["bot_token_enc"] = encrypt(token)
+    return out
+
+
+def _merge_patch(existing: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """Patch a config without ever dropping the sealed token (D11)."""
+    merged = dict(existing)
+    sealed = merged.pop("bot_token_enc", None)
+    merged.update(patch)
+    out = _seal(merged)
+    if sealed is not None and "bot_token_enc" not in out:
+        out["bot_token_enc"] = sealed
+    return out
+
+
 def _notifier_out(index: int, entry: dict[str, Any]) -> NotifierOut:
-    """Map a notifier_config entry to its public shape."""
+    """Map a notifier_config entry to its public shape.
+
+    The sealed token never leaves the server — not even ciphertext: has_token
+    is the only signal that a real credential is configured (spec A7.4).
+    """
     raw_config = entry.get("config", {})
+    public_config = (
+        {k: v for k, v in raw_config.items() if k != "bot_token_enc"}
+        if isinstance(raw_config, dict)
+        else {}
+    )
     return NotifierOut(
         id=index,
         kind=str(entry.get("kind", "telegram")),
         enabled=bool(entry.get("enabled", True)),
-        config=dict(raw_config) if isinstance(raw_config, dict) else {},
+        config=public_config,
+        has_token=bool(raw_config.get("bot_token_enc")) if isinstance(raw_config, dict) else False,
     )
 
 
@@ -92,7 +124,7 @@ def create_notifier(body: NotifierCreate, claims: AdminDep, db: DbSessionDep) ->
     """Add a notifier. Admin only."""
     site = _site(db, claims)
     entries = _notifiers(site)
-    entry = {"kind": body.kind, "enabled": body.enabled, "config": body.config}
+    entry = {"kind": body.kind, "enabled": body.enabled, "config": _seal(body.config)}
     entries.append(entry)
     site.notifier_config = entries  # type: ignore[assignment]
     db.commit()
@@ -113,7 +145,7 @@ def patch_notifier(
     if "enabled" in updates:
         entry["enabled"] = updates["enabled"]
     if "config" in updates and updates["config"] is not None:
-        entry["config"] = updates["config"]
+        entry["config"] = _merge_patch(entry.get("config", {}), updates["config"])
     site.notifier_config = entries  # type: ignore[assignment]
     db.commit()
     return _notifier_out(notifier_id, entry)
@@ -132,11 +164,37 @@ def delete_notifier(notifier_id: int, claims: AdminDep, db: DbSessionDep) -> Res
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/notifiers/test")
-def test_notifier(claims: AdminDep, db: DbSessionDep) -> Response:  # noqa: ARG001
-    """Send a real test message. Phase 4 wires the transport; explicit 501."""
-    return Response(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content='{"error": {"code": "NOT_IMPLEMENTED", "message": "notifier transport lands in Phase 4", "field": null, "correlation_id": "none"}}',
-        media_type="application/json",
+def _build_notifier(entry: dict[str, Any]) -> TelegramNotifier | None:
+    """Construct the TelegramNotifier for a stored entry, None when unusable.
+
+    A token-less telegram entry (or any non-telegram kind) must not raise —
+    the test endpoint answers a handled failure, mirroring how the delivery
+    worker's `_build_notifiers` skips such entries.
+    """
+    if entry.get("kind") != "telegram":
+        return None
+    config = entry.get("config") or {}
+    token_enc = config.get("bot_token_enc")
+    if not token_enc:
+        return None
+    return TelegramNotifier(
+        bot_token=decrypt(str(token_enc)),
+        chat_id=str(config.get("chat_id", "")),
     )
+
+
+@router.post("/notifiers/test")
+async def test_notifier(claims: AdminDep, db: DbSessionDep) -> dict[str, Any]:
+    """Send a real test message; Telegram's response verbatim (API ASystem)."""
+    entries = [e for e in _notifiers(_site(db, claims)) if e.get("enabled", True)]
+    try:
+        notifier = next((n for n in (_build_notifier(e) for e in entries) if n is not None), None)
+        if notifier is None:
+            return {
+                "ok": False,
+                "error": "no enabled Telegram notifier with a stored token",
+            }
+        response = await notifier.test_message()
+    except TelegramError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "response": response}

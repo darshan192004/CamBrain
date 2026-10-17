@@ -123,5 +123,7 @@ class EventRepository(TenantScopedRepository[Event]):
         return {
             "total": int(total),
             "by_severity": {k: int(v) for k, v in by_severity.items()},
-            "by_camera": {str(k): int(v) for k, v in by_camera.items()},
+            "by_camera": {
+                ("system" if k is None else str(k)): int(v) for k, v in by_camera.items()
+            },
         }

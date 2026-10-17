@@ -111,6 +111,32 @@ def test_status_shape(
         assert "stats" in data
 
 
+def test_status_reports_hardware_and_model(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """The dashboard's tier/model/hardware rows come from the real probe (T13)."""
+    resp = client.get("/api/v1/system/status", headers=admin_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["hardware_tier"] in ("low", "medium", "high", "unknown")
+    hardware = data["hardware"]
+    for key in (
+        "cpu_cores",
+        "avx2",
+        "vnni",
+        "ram_total_mb",
+        "ram_used_mb",
+        "disk_total_gb",
+        "disk_used_pct",
+    ):
+        assert key in hardware, key
+    if data["hardware_tier"] != "unknown":
+        model = data["model"]
+        assert model["name"].endswith(".onnx")
+        assert model["tier"] == data["hardware_tier"]
+        assert model["input"][0] == model["input"][1]
+
+
 def test_config_requires_admin(client: TestClient, viewer_headers: dict[str, str]) -> None:
     assert client.get("/api/v1/system/config", headers=viewer_headers).status_code == 403
 
@@ -235,3 +261,37 @@ async def test_tracked_parts_brackets_stats_with_the_consumer(
     await gen.aclose()
     assert stats.row(7)["active"] is False
     assert stats.row(7)["frames"] >= 1  # totals survive the disconnect
+
+
+def test_status_reports_delivery_stats(
+    client: TestClient, admin_headers: dict[str, str], db_session, seeded
+) -> None:
+    """At 2am the owner asks 'did it send?' — the status page answers (D4)."""
+    from datetime import UTC, datetime
+
+    from app.db.models import Camera, Event
+
+    site, _a, _v = seeded
+    camera = Camera(site_id=site.id, name="Dock", rtsp_url="rtsp://10.0.0.9/ch1")
+    db_session.add(camera)
+    db_session.flush()
+    today = datetime.now(tz=UTC).replace(tzinfo=None)
+    for delivery in ("sent", "sent", "pending", "failed"):
+        db_session.add(
+            Event(
+                site_id=site.id,
+                camera_id=camera.id,
+                rule_id=None,
+                triggered_by="system",
+                started_at=today,
+                severity="warning",
+                summary="s",
+                delivery_status=delivery,
+            )
+        )
+    db_session.commit()
+    res = client.get("/api/v1/system/status", headers=admin_headers)
+    stats = res.json()["stats"]
+    assert stats["events_today"] == 4
+    assert stats["alerts_sent"] == 2
+    assert stats["alerts_failed"] == 1

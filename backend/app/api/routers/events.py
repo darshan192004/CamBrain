@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse
 
 from app.api.deps import ClaimsDep, DbSessionDep
@@ -41,10 +41,16 @@ def _repo(db: Any, claims: dict[str, Any]) -> EventRepository:
 def _to_out(
     event: Event, detections: list[EventDetectionOut], camera_name: str, rule_name: str | None
 ) -> EventOut:
-    """Map an Event row and its detections to the public response shape."""
+    """Map an Event row and its detections to the public response shape.
+
+    System events (no camera) serialise `camera: null`; the UI renders the
+    name "System" for them (D5), so no CameraRef is invented with a null id.
+    """
     return EventOut(
         id=event.id,
-        camera=CameraRef(id=event.camera_id, name=camera_name),
+        camera=(
+            CameraRef(id=event.camera_id, name=camera_name) if event.camera_id is not None else None
+        ),
         rule=RuleRef(id=event.rule_id, name=rule_name) if event.rule_id and rule_name else None,
         severity=event.severity,
         summary=event.summary,
@@ -57,6 +63,13 @@ def _to_out(
         clip_url=f"/api/v1/events/{event.id}/clip",
         detections=detections,
     )
+
+
+def _camera_label(names: dict[int, str], camera_id: int | None) -> str:
+    """Camera name for an event; 'System' when the event has no camera."""
+    if camera_id is None:
+        return "System"
+    return names.get(camera_id, f"camera-{camera_id}")
 
 
 def _camera_names(db: Any, claims: dict[str, Any]) -> dict[int, str]:
@@ -114,7 +127,7 @@ def list_events(
         _to_out(
             e,
             _detections(repo, e.id),
-            cam_names.get(e.camera_id, f"camera-{e.camera_id}"),
+            _camera_label(cam_names, e.camera_id),
             rule_names.get(e.rule_id) if e.rule_id else None,
         )
         for e in events
@@ -141,7 +154,7 @@ def get_event(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> EventOut:
     return _to_out(
         event,
         _detections(repo, event.id),
-        cam_names.get(event.camera_id, f"camera-{event.camera_id}"),
+        _camera_label(cam_names, event.camera_id),
         rule_names.get(event.rule_id) if event.rule_id else None,
     )
 
@@ -160,7 +173,7 @@ def acknowledge_event(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> Eve
     return _to_out(
         event,
         _detections(repo, event.id),
-        cam_names.get(event.camera_id, f"camera-{event.camera_id}"),
+        _camera_label(cam_names, event.camera_id),
         rule_names.get(event.rule_id) if event.rule_id else None,
     )
 
@@ -195,13 +208,24 @@ def get_thumbnail(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> FileRes
 
 
 @router.get("/events/{event_id}/clip")
-def get_clip(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> Response:
-    """Return the clip bytes. 404 when the clip was never written or was pruned.
+def get_clip(event_id: int, claims: ClaimsDep, db: DbSessionDep) -> FileResponse:
+    """Stream the stored clip inline with Range support (API §Events).
 
-    Phase 4 wires real storage; this returns 404 so the contract is correct
-    from day one and cannot be mistaken for a working stream.
+    404 when the clip was never written or was pruned; `clip_path` resolves
+    inside the media root only — an escaping path is 404, never served
+    (SECURITY §6.2).
     """
     event = _repo(db, claims).get(event_id)
     if event is None or event.clip_path is None:
         raise NotFoundError("clip not found")
-    raise NotFoundError("clip not found")
+    root = settings.media_root.resolve()
+    path = Path(event.clip_path)
+    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
+    if not resolved.is_relative_to(root) or not resolved.is_file():
+        raise NotFoundError("clip not found")
+    return FileResponse(
+        resolved,
+        media_type="video/mp4",
+        content_disposition_type="inline",
+        filename=f"event-{event_id}.mp4",
+    )

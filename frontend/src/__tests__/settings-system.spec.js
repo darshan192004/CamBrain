@@ -1,5 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
 
 import SystemView from "../settings/SystemView.vue";
 import { clearTokens, setTokens } from "../api/token.js";
@@ -72,11 +73,18 @@ function systemFetch(opts = {}) {
  */
 function mountSystem(impl) {
   vi.stubGlobal("fetch", impl);
-  return mount(SystemView);
+  return mount(SystemView, { global: { plugins: [pinia] } });
 }
+
+let pinia;
 
 beforeEach(() => {
   setTokens(pair);
+  // SystemView reads auth.isAdmin for the notifiers panel, so the view
+  // now needs a Pinia; a fresh one per test keeps roles isolated (role
+  // stays null here → panel hidden → these tests never hit /notifiers).
+  pinia = createPinia();
+  setActivePinia(pinia);
 });
 
 afterEach(() => {

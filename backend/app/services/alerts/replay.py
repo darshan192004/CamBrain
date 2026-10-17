@@ -1,14 +1,18 @@
-"""Replay stored detections through the pure rules engine (spec A7.3).
+"""Replay recorded detections through the pure rules engine (spec A7.3).
 
-The endpoint must never run a detector: a diagnostic uses what was already
-recorded, so it stays fast, deterministic, and free of weights in API tests.
-Pixel bboxes are normalised with the camera's stored frame size — without it
-a normalised ROI cannot be interpreted, which is a 422, not a silent pass.
+Two callers share this module: the event path replays what the pipeline
+already recorded, and the still path (image_b64) evaluates detections from
+an injected detector — neither owns inference, so evaluation stays pure,
+deterministic, and free of weights in API tests. Pixel bboxes are normalised
+against a frame size — the camera's stored dimensions for an event, the
+image's own for a still — because without it a normalised ROI cannot be
+interpreted, which is a 422, not a silent pass.
 """
 
 from __future__ import annotations
 
-from datetime import UTC
+from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from app.core.errors import ValidationError
 from app.db.models import Camera, Event, EventDetection, Roi, Rule
@@ -21,6 +25,7 @@ from app.services.alerts.rules import (
     parse_active_hours,
 )
 from app.services.inference.tracker import TrackedObject
+from app.services.inference.types import Detection
 
 
 def rule_config(rule: Rule, roi: Roi | None) -> RuleConfig:
@@ -39,7 +44,50 @@ def rule_config(rule: Rule, roi: Roi | None) -> RuleConfig:
             else None
         ),
         last_fired_at=None,
+        notify=rule.notify,
     )
+
+
+def detections_to_tracked(
+    detections: Sequence[EventDetection | Detection], width: int, height: int
+) -> list[TrackedObject]:
+    """Project stored rows — or a fresh still's detections — into engine inputs.
+
+    A stored row keeps its recorded track id; a still has no history, so it
+    gets a synthetic one (its position in the detection list).
+    """
+    tracks: list[TrackedObject] = []
+    for index, det in enumerate(detections, start=1):
+        bbox = (int(det.bbox[0]), int(det.bbox[1]), int(det.bbox[2]), int(det.bbox[3]))
+        track_id = det.track_id if isinstance(det, EventDetection) else index
+        tracks.append(
+            TrackedObject(
+                track_id=track_id or index,
+                class_name=det.class_name,
+                confidence=det.confidence,
+                bbox=bbox,
+                centroid=normalised_centroid(bbox, width, height),
+            )
+        )
+    return tracks
+
+
+def evaluate_detections(
+    engine: RulesEngine,
+    config: RuleConfig,
+    tracked: Sequence[TrackedObject],
+    when: datetime,
+) -> RuleOutcome:
+    """Evaluate tracked objects; the strongest candidate's checks win.
+
+    Most conditions passed wins; confidence breaks ties; fired (all five)
+    is always the maximum, so `fired` and the returned checks agree.
+    """
+    if not tracked:
+        raise ValidationError("no detections to replay")
+    outcomes = [(track.confidence, engine.evaluate(track, config, when)) for track in tracked]
+    _, best = max(outcomes, key=lambda pair: (sum(c.passed for c in pair[1].checks), pair[0]))
+    return best
 
 
 def replay(
@@ -64,18 +112,6 @@ def replay(
     if not detections:
         raise ValidationError("event has no detections to replay")
     when = event.started_at if event.started_at.tzinfo else event.started_at.replace(tzinfo=UTC)
-    outcomes: list[tuple[float, RuleOutcome]] = []
-    for index, det in enumerate(detections, start=1):
-        bbox = (int(det.bbox[0]), int(det.bbox[1]), int(det.bbox[2]), int(det.bbox[3]))
-        track = TrackedObject(
-            track_id=det.track_id or index,
-            class_name=det.class_name,
-            confidence=det.confidence,
-            bbox=bbox,
-            centroid=normalised_centroid(bbox, width, height),
-        )
-        outcomes.append((det.confidence, engine.evaluate(track, config, when)))
-    # Most conditions passed wins; confidence breaks ties; fired (all five)
-    # is always the maximum, so `fired` and the returned checks agree.
-    _, best = max(outcomes, key=lambda pair: (sum(c.passed for c in pair[1].checks), pair[0]))
-    return best
+    return evaluate_detections(
+        engine, config, detections_to_tracked(detections, width, height), when
+    )

@@ -146,14 +146,14 @@ Phases are sequenced so that **each phase ends with something demonstrable**. No
 
 ## Phase 5 — Alerting & events
 
-- [ ] `events/clips.py` — 10s pre-roll ring buffer, 20s post-roll
-- [ ] `alerts/notifier.py` — protocol
-- [ ] `alerts/telegram.py` — sendPhoto / sendVideo, token encrypted at rest
-- [ ] `alerts/whatsapp.py` — stub behind the same interface (Phase 5+)
-- [ ] Event + detection persistence
-- [ ] WS `alerts` broadcast
-- [ ] Offline behaviour — event stored, retried when connectivity returns
-- [ ] Retention enforcement, disk quota cap
+- [x] `events/clips.py` — 10s pre-roll ring buffer, 20s post-roll
+- [x] `alerts/notifier.py` — protocol
+- [x] `alerts/telegram.py` — sendPhoto / sendVideo, token encrypted at rest
+- [x] `alerts/whatsapp.py` — stub behind the same interface (Phase 5+)
+- [x] Event + detection persistence
+- [x] WS `alerts` broadcast
+- [x] Offline behaviour — event stored, retried when connectivity returns
+- [x] Retention enforcement, disk quota cap
 
 ---
 

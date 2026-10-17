@@ -56,13 +56,20 @@ class StreamManager:
         self._workers: dict[str, _CameraWorker] = {}
         self._lock = threading.Lock()
 
-    def add_camera(self, config: CameraConfig, *, sink: FrameSink | None = None) -> None:
+    def add_camera(
+        self,
+        config: CameraConfig,
+        *,
+        sink: FrameSink | None = None,
+        on_frame: FrameSink | None = None,
+    ) -> None:
         """Start a pipeline for ``config`` on a fresh thread+loop.
 
         Args:
             config: Camera settings for the new pipeline.
             sink: Per-camera override; falls back to the manager-wide sink.
                 Phase 3 passes one AlertStage per camera through this slot.
+            on_frame: Raw-frame hook before the motion gate (T13 bridge).
 
         Raises:
             ValueError: If the camera is already running.
@@ -72,7 +79,7 @@ class StreamManager:
                 raise ValueError(f"camera {config.camera_id} is already running")
             worker = _CameraWorker(config.camera_id)
             source = self._factory(config)
-            worker.pipeline = CameraPipeline(config, source, sink or self._sink)
+            worker.pipeline = CameraPipeline(config, source, sink or self._sink, on_frame=on_frame)
             worker.thread.start()
             worker.future = asyncio.run_coroutine_threadsafe(worker.pipeline.run(), worker.loop)
             worker.future.add_done_callback(
@@ -122,3 +129,9 @@ class StreamManager:
             # fresh worker deleted by the old one's late callback.
             if self._workers.get(camera_id) is worker:
                 del self._workers[camera_id]
+        # A pipeline that ended on its own (source exhausted, fatal error)
+        # would otherwise leave run_forever idling; park the loop so the
+        # thread exits. remove_camera's path stops it too — this is the
+        # no-one-is-watching path (T13).
+        if worker.loop.is_running():
+            worker.loop.call_soon_threadsafe(worker.loop.stop)

@@ -383,9 +383,13 @@ class RuleTestOut(BaseModel):
 
 
 class RuleTestRequest(BaseModel):
-    """Optional event selection; omit for the camera's most recent event."""
+    """A base64 JPEG still to detect live, or event selection (API A7.3).
+
+    Omitting both replays the camera's most recent event.
+    """
 
     event_id: int | None = None
+    image_b64: str | None = None
 
 
 class EventDetectionOut(BaseModel):
@@ -415,7 +419,7 @@ class EventOut(BaseModel):
     """Event list/detail response. URLs are opaque, resolved by event id."""
 
     id: int
-    camera: CameraRef
+    camera: CameraRef | None = None
     rule: RuleRef | None
     severity: str
     summary: str | None
@@ -504,6 +508,7 @@ class NotifierOut(BaseModel):
     kind: str
     enabled: bool
     config: dict[str, object]
+    has_token: bool = False
 
 
 class NotifierCreate(BaseModel):

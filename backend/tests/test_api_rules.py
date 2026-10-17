@@ -396,3 +396,62 @@ def test_rule_test_cross_tenant_event_is_404(
         headers=admin_headers,
     )
     assert resp.status_code == 404
+
+
+def test_rule_test_with_base64_still_runs_detector(
+    client: TestClient, admin_headers: dict[str, str], db_session: Session, seeded
+) -> None:
+    """Spec A7.3 still-or-event: the still path needs no weights and no stored dims."""
+    import base64
+
+    import numpy as np
+
+    from app.api.routers.rules import get_rule_detector
+    from app.services.inference.types import Detection
+    from app.services.stream.jpeg import encode_jpeg
+    from app.services.stream.source import Frame
+
+    site, _admin, _viewer = seeded
+    camera = Camera(
+        site_id=site.id, name="Front", rtsp_url=_URL, frame_width=None, frame_height=None
+    )
+    db_session.add(camera)
+    db_session.commit()
+    rule = Rule(
+        site_id=site.id,
+        camera_id=camera.id,
+        roi_id=None,
+        name="r",
+        severity="critical",
+        classes=["person"],
+        confidence_threshold=0.5,
+        cooldown_seconds=0,
+        notify=True,
+    )
+    db_session.add(rule)
+    db_session.commit()
+
+    class FakeDetector:
+        async def infer(self, frame: Frame) -> list[Detection]:
+            assert (frame.width, frame.height) == (64, 36), "image carries its own dims"
+            return [Detection(class_name="person", confidence=0.91, bbox=(4, 4, 40, 30))]
+
+        async def close(self) -> None:
+            return None
+
+    jpeg = encode_jpeg(
+        Frame(data=np.zeros((36, 64, 3), dtype=np.uint8), timestamp=0.0, width=64, height=36)
+    )
+    client.app.dependency_overrides[get_rule_detector] = lambda: lambda: FakeDetector()
+    try:
+        resp = client.post(
+            f"/api/v1/rules/{rule.id}/test",
+            json={"image_b64": base64.b64encode(jpeg).decode()},
+            headers=admin_headers,
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_rule_detector, None)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["fired"] is True
+    assert any(c["condition"] == "in_roi" for c in body["checks"])

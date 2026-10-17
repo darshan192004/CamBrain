@@ -227,7 +227,7 @@ Windows may cross midnight. The timezone is stored with the rule so a site's hou
 |---|---|---|
 | `id` | INTEGER PK | |
 | `site_id` | INTEGER FK → sites ON DELETE CASCADE | |
-| `camera_id` | INTEGER FK → cameras ON DELETE CASCADE | |
+| `camera_id` | INTEGER FK → cameras ON DELETE CASCADE | NULL = system event (no camera) — displayed as "System" |
 | `rule_id` | INTEGER FK → rules ON DELETE SET NULL | NULL = auto/manual, survives rule deletion |
 | `triggered_by` | TEXT NOT NULL DEFAULT 'rule' | `rule`\|`manual`\|`system` |
 | `started_at` | DATETIME NOT NULL | UTC, event open time |
@@ -241,6 +241,7 @@ Windows may cross midnight. The timezone is stored with the rule so a site's hou
 | `delivery_status` | TEXT NOT NULL DEFAULT 'pending' | `pending`\|`sent`\|`failed`\|`skipped` |
 | `delivery_attempts` | INTEGER NOT NULL DEFAULT 0 | |
 | `delivered_at` | DATETIME NULL | |
+| `last_attempt_at` | DATETIME NULL | Last delivery attempt — the retry sweep computes its backoff from here |
 | `last_delivery_error` | TEXT NULL | Credential-masked |
 | `acknowledged_at` | DATETIME NULL | NULL = unacknowledged |
 | `acknowledged_by` | INTEGER FK → users ON DELETE SET NULL | |

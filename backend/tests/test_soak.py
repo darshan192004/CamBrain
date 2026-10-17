@@ -46,7 +46,7 @@ from app.db.session import create_engine_for
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 CLIPS_DIR = Path(__file__).parent / "fixtures" / "clips"
 MEDIAMTX = Path(__file__).parent / "rtsp" / ".tools" / "mediamtx.exe"
-CSRF_HEADERS = {"x-cambbrain-client": "soak"}
+CSRF_HEADERS = {"x-cambrain-client": "soak"}
 # CREATE_NO_WINDOW keeps the pytest console clean; Windows-only flag, and 0
 # is the accepted no-op on POSIX (the gate box is Windows, CI is Linux).
 NO_WINDOW = 0x0800_0000 if sys.platform == "win32" else 0

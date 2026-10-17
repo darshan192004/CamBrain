@@ -1,7 +1,7 @@
 /**
  * Thin fetch wrapper for the CamBrain API (design §9: fetch, no axios).
  *
- * Responsibilities: the `X-CambBrain-Client` CSRF header on every call, JSON
+ * Responsibilities: the `X-CamBrain-Client` CSRF header on every call, JSON
  * bodies with `Content-Type: application/json`, `Authorization: Bearer` when
  * a token is held, error-envelope decoding into {@link ApiError}, and one
  * single-flight refresh-and-retry on 401. Bytes endpoints (snapshot,
@@ -17,7 +17,7 @@ import {
 } from "./token.js";
 
 export const BASE = "/api/v1";
-export const CLIENT_HEADER = "X-CambBrain-Client";
+export const CLIENT_HEADER = "X-CamBrain-Client";
 export const CLIENT_VALUE = "cambrain-dashboard";
 
 /**

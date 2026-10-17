@@ -146,7 +146,7 @@ Login: 5 attempts per username per minute, then exponential backoff to 15 min. P
 The API is consumed by our own first-party frontend over localhost, not by third-party sites — but a malicious page in the operator's browser can reach `127.0.0.1:8765`. Defences:
 
 - State-changing requests require `Content-Type: application/json`, which forces a CORS preflight for cross-origin attempts.
-- A custom `X-CambBrain-Client` header is required on all mutating requests; custom headers also force preflight.
+- A custom `X-CamBrain-Client` header is required on all mutating requests; custom headers also force preflight.
 - `Origin`/`Referer` validated against an allowlist.
 - No CORS wildcard, ever. The allowlist is localhost origins only.
 - `SameSite=Strict` on the refresh-token cookie; the access token is held in memory, never `localStorage`, so XSS cannot exfiltrate a persistent credential.

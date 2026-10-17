@@ -53,7 +53,7 @@ describe("openMjpeg (plan D3 byte vectors)", () => {
     const [, init] = fetchMock.mock.calls[0];
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/cameras/4/stream");
     expect(init.headers.Authorization).toBe("Bearer tok-1");
-    expect(init.headers["X-CambBrain-Client"]).toBe("cambrain-dashboard");
+    expect(init.headers["X-CamBrain-Client"]).toBe("cambrain-dashboard");
     expect(init.signal).toBeDefined();
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("ended"));
   });

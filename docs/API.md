@@ -13,7 +13,7 @@
 | **Every route requires auth** | Anyone on the LAN can reach the port — see [prd.md §7](prd.md) |
 | `site_id` never accepted from the client | Taken from the token; client-supplied is an IDOR — [SECURITY.md §4.3](SECURITY.md) |
 | Secrets never returned | `password` is always masked; `GET` cannot leak |
-| Mutating requests need `Content-Type: application/json` + `X-CambBrain-Client` | Forces a CORS preflight, blocking CSRF from a malicious page |
+| Mutating requests need `Content-Type: application/json` + `X-CamBrain-Client` | Forces a CORS preflight, blocking CSRF from a malicious page |
 | Errors share one envelope | Frontend handles one shape instead of six |
 | Soft delete for rules; hard delete for sites | Config must survive a mistaken rule deletion |
 | Bulk endpoints capped | One request must not pin the box |
@@ -499,7 +499,7 @@ Internal errors return a generic message plus a correlation id; the full trace g
 - **Access token:** JWT `HS256`, 12h, sent as `Authorization: Bearer <token>`.
 - **Refresh token:** 7d opaque string, stored hashed in `sessions`, rotated on use, reuse detection revokes the family.
 - **The access token lives in memory in the frontend, never `localStorage`.** An XSS bug should not yield a persistent credential.
-- **Requests require `X-CambBrain-Client`; mutating requests require `Content-Type: application/json`.** Both force a CORS preflight, so a malicious page on the LAN cannot drive the API. See [SECURITY.md §4.5](SECURITY.md).
+- **Requests require `X-CamBrain-Client`; mutating requests require `Content-Type: application/json`.** Both force a CORS preflight, so a malicious page on the LAN cannot drive the API. See [SECURITY.md §4.5](SECURITY.md).
 - **Origin/Referer validated** against a localhost allowlist. No wildcard, ever.
 - **`403` on insufficient role; the UI's `RoleGate` is presentation, not a control.**
 

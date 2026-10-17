@@ -1,9 +1,12 @@
-"""Replay stored detections through the pure rules engine (spec A7.3).
+"""Replay recorded detections through the pure rules engine (spec A7.3).
 
-The endpoint must never run a detector: a diagnostic uses what was already
-recorded, so it stays fast, deterministic, and free of weights in API tests.
-Pixel bboxes are normalised with the camera's stored frame size — without it
-a normalised ROI cannot be interpreted, which is a 422, not a silent pass.
+Two callers share this module: the event path replays what the pipeline
+already recorded, and the still path (image_b64) evaluates detections from
+an injected detector — neither owns inference, so evaluation stays pure,
+deterministic, and free of weights in API tests. Pixel bboxes are normalised
+against a frame size — the camera's stored dimensions for an event, the
+image's own for a still — because without it a normalised ROI cannot be
+interpreted, which is a 422, not a silent pass.
 """
 
 from __future__ import annotations

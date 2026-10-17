@@ -61,7 +61,7 @@
 | MODIFY | `backend/app/api/routers/system.py` | `events_today` / `alerts_sent` / `alerts_failed` stats |
 | MODIFY | `backend/app/api/deps.py` | `get_detector` dependency (runtime-held) |
 | MODIFY | `backend/app/db/repositories/events.py` | `stats()` null camera key; pending-delivery query |
-| MODIFY | `backend/tests/conftest.py` | `CAMBRAIN_RUNTIME=0` default |
+| MODIFY | `backend/tests/conftest.py` | `CAMBRAIN_RUNTIME_ENABLED=0` default |
 | MODIFY | `backend/tests/test_alert_stage.py`, `test_pipeline.py`, `test_gate_inference.py` | ctor/field updates |
 | CREATE | `frontend/src/api/alertsSocket.js` | WS client with jittered reconnect |
 | MODIFY | `frontend/src/stores/events.js` | WS upsert replaces polling |
@@ -84,7 +84,7 @@
 | D7 | `/ws/frames` stays deferred (documented, not built) | The grid ships MJPEG cleanly; base64-over-WS is the main CPU cost of the dashboard (API.md §3) | scope |
 | D8 | Still upload for `POST /rules/{id}/test` ships as **base64 JSON** with an injectable detector dep | Spec §7.3 requires still-or-event; multipart would violate the §7.4 JSON-only mutation rule | rules router |
 | D9 | Rate limiter: in-memory fixed window, per-route rows above, `login`/`stream`/`ws` excluded | Phase-4 D4 promised the remaining rows to Phase 5; no Redis (architecture §8) | `ratelimit.py` |
-| D10 | Runtime gated by `CAMBRAIN_RUNTIME` (default on; conftest sets `0`); missing weights → log + degraded start (API up, no pipelines) | API tests must never open ONNX/RTSP; CI without weights still boots | `runtime.py`, `main.py` |
+| D10 | Runtime gated by `CAMBRAIN_RUNTIME_ENABLED` (default on; conftest sets `0`); missing weights → log + degraded start (API up, no pipelines) | API tests must never open ONNX/RTSP; CI without weights still boots | `runtime.py`, `main.py` |
 | D11 | Notifier tokens stored as `bot_token_enc` **inside** `sites.notifier_config` JSON; GET returns `has_token` mask only | DATABASE §6 + "secrets never returned by GET" (§7.4) | settings router |
 | D12 | Quota refusal fires **one** system event per crossing (in-process latch per site) | A disk persistently over quota would otherwise alarm-spam every write | handler/latch |
 | D13 | Runtime detector = `yolox_nano.onnx` @ **416** (repo `models/`, phase-3 gate config), env-overridable; tier selection is Phase 6 | Weights already fetched + proven by `test_gate_inference`; `capabilities.py` is a Phase-6 task | config, runtime |
@@ -95,7 +95,7 @@
 | Risk | Mitigation |
 |---|---|
 | Encoder availability (`libx264`) in the installed PyAV wheel | Already proven by `tests/make_fixtures.py`; task fails loudly if not |
-| Lifespan starts heavy resources in API tests | `CAMBRAIN_RUNTIME=0` in conftest before app import; TestClient runs lifespan on enter |
+| Lifespan starts heavy resources in API tests | `CAMBRAIN_RUNTIME_ENABLED=0` in conftest before app import; TestClient runs lifespan on enter |
 | Rate limiter breaks existing tests (>120 requests to one app) | Fresh middleware per `create_app()`; existing suites stay far under 120; hammer test isolated |
 | Alembic batch rebuild of `events` on a populated DB | Both migrations hand-written with tested `downgrade()`; gate runs upgrade+downgrade roundtrip on a DB copy |
 | Cross-thread WS broadcast (camera loops → API loop) | `AlertHub` records the API loop at first subscribe; foreign threads marshal via `run_coroutine_threadsafe` |
@@ -640,11 +640,6 @@ def test_attach_media_and_mark_delivery(db_session, seeded) -> None:
     assert row.delivery_status == "sent" and row.delivery_attempts == 1
     assert row.delivered_at is not None and row.last_attempt_at is not None
 ```
-
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `$env:PATH = "E:\CamBrain\.venv\Scripts;" + $env:PATH; python -m pytest backend/tests/test_events_persist.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.events.persist'`.
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -2980,7 +2975,7 @@ body: `Disk-quota refusals are site events, not camera events (spec A5.7): camer
 - Create: `backend/app/services/runtime.py`
 - Modify: `backend/app/core/config.py` (`model_path`, `model_input_size`, `runtime_enabled`, `telegram_api_base`)
 - Modify: `backend/app/main.py` (lifespan)
-- Modify: `backend/tests/conftest.py` (`os.environ.setdefault("CAMBRAIN_RUNTIME", "0")` next to the JWT line)
+- Modify: `backend/tests/conftest.py` (`os.environ.setdefault("CAMBRAIN_RUNTIME_ENABLED", "0")` next to the JWT line)
 - Test: `backend/tests/test_runtime.py`
 
 **Interfaces:**
@@ -3155,7 +3150,7 @@ Wait — `model_path` default: the repo weights live at `<repo>/models/yolox_nan
 **`conftest.py`** — next to line 17:
 
 ```python
-os.environ.setdefault("CAMBRAIN_RUNTIME", "0")
+os.environ.setdefault("CAMBRAIN_RUNTIME_ENABLED", "0")
 ```
 
 **`runtime.py`**:
@@ -3167,7 +3162,7 @@ Owned by main.py's lifespan. Every collaborator is constructed here once:
 one detector + pool, one hub, one delivery worker, one retention runner,
 and per camera a ring buffer + handler + AlertStage (arch A7).
 
-`enabled=False` (conftest, CAMBRAIN_RUNTIME=0) makes start() a no-op so the
+`enabled=False` (conftest, CAMBRAIN_RUNTIME_ENABLED=0) makes start() a no-op so the
 API test suite never opens a socket or a model file.
 """
 
@@ -3548,7 +3543,7 @@ def create_app() -> FastAPI:
     ...
 ```
 
-Conftest `TestClient` runs lifespan on entry — with `CAMBRAIN_RUNTIME=0` it's a no-op; confirm the full suite still passes. If `TestClient(app)` without `with` is used anywhere, lifespan won't run there (fine — runtime only needed live).
+Conftest `TestClient` runs lifespan on entry — with `CAMBRAIN_RUNTIME_ENABLED=0` it's a no-op; confirm the full suite still passes. If `TestClient(app)` without `with` is used anywhere, lifespan won't run there (fine — runtime only needed live).
 
 **Also fix `system.py` hardware/model stubs while here** (part of the `—×—` debt): populate `"hardware_tier"` via `app.services.inference.tiers.resolve_tier()` (returns `(tier, model_path, input_size)` — cache at module import in a try/except returning `"unknown"`), `"model": {"name": model_path.name, "input_size": n}` when resolvable, and `"hardware"` from `probe_capabilities()` (cpu_cores/avx2/vnni/ram/disk via `shutil.disk_usage` + `psutil`-free `os.cpu_count()`; read `tiers.Capabilities` fields and map them; disk via `shutil.disk_usage(settings.media_root)`). SystemView renders `hardware.disk_used_pct` — include it. Tests: existing system tests may assert `"unknown"` — update them to assert the real shape instead (`hardware_tier in ("low","mid","high","unknown")`).
 
@@ -3560,7 +3555,7 @@ Expected: runtime tests pass; full suite still green; ruff/mypy clean.
 - [ ] **Step 5: Commit**
 
 Message (`feat(runtime): lifespan-owned pipelines, alert chain, and DB bridge`):
-body: `The API process finally runs the cameras it serves: one detector + pool, per-camera ring/handler/stage, delivery and retention loops, all gated by CAMBRAIN_RUNTIME so tests stay socket-free (D10). The bridge writes frame dims and live status from the first sampled frame, retiring the -—x-— placeholder debt.`
+body: `The API process finally runs the cameras it serves: one detector + pool, per-camera ring/handler/stage, delivery and retention loops, all gated by CAMBRAIN_RUNTIME_ENABLED so tests stay socket-free (D10). The bridge writes frame dims and live status from the first sampled frame, retiring the -—x-— placeholder debt.`
 
 ---
 
@@ -4193,7 +4188,7 @@ body: `The System page gains the Telegram panel the Phase-4 comment promised: ch
 
 **Gate checklist (spec §11 row 5: "A Telegram photo arrives at 02:00"):**
 
-1. Start stack: uvicorn :8765 with `CAMBRAIN_RUNTIME=1`, MediaMTX :8554 + `publish.py` loop, vite :5173.
+1. Start stack: uvicorn :8765 with `CAMBRAIN_RUNTIME_ENABLED=1`, MediaMTX :8554 + `publish.py` loop, vite :5173.
 2. Mock Telegram capture: a tiny local HTTP server (`python -m http.server` won't do — needs POST capture): `.tmp/mock_telegram.py` using `http.server` that records POSTs (path/body/headers) to `.tmp/telegram_capture.json` and returns `{"ok":true,"result":{"message_id":1}}`. Point `CAMBRAIN_TELEGRAM_API_BASE=http://127.0.0.1:8799` at it.
 3. Configure via UI (headed Playwright, screenshots → `.tmp/gate-5-*.png`):
    - login → System → add Telegram notifier (chat_id `gate`, token `SECRET-GATE-TOKEN`) → Test → success aria-live (gate-5-1).
@@ -4209,10 +4204,10 @@ Gate script follows `.tmp/gate-4.18.mjs` conventions (BASE, screenshots dir, hea
 
 **PR flow:** branch `phase-5-alerting` → commits per task → push → PR with body summarizing the phase + gate evidence → PR-Agent `/review` via `gh api .../issues/{N}/comments` (persistent comment, poll for marker) → disposition findings → tick tasks.md → merge → delete branch. Direct pushes to main are blocked.
 
-- [ ] **Step 1: Docs edits** (checklist above, each line verified against shipped code).
-- [ ] **Step 2: Loops green.**
-- [ ] **Step 3: Gate run** — all screenshots captured, capture file proves sendPhoto.
-- [ ] **Step 4: Commit docs + tasks ticks** — `docs(phase-5): amend living docs and tick tasks`.
+- [x] **Step 1: Docs edits** (checklist above, each line verified against shipped code).
+- [x] **Step 2: Loops green.**
+- [x] **Step 3: Gate run** — all screenshots captured, capture file proves sendPhoto.
+- [x] **Step 4: Commit docs + tasks ticks** — `docs(phase-5): amend living docs and tick tasks`.
 - [ ] **Step 5: PR + review + merge** — conventional body, no Co-Authored-By.
 
 ---
@@ -4221,28 +4216,30 @@ Gate script follows `.tmp/gate-4.18.mjs` conventions (BASE, screenshots dir, hea
 
 | Task | Status | Date | Evidence | Notes |
 |---|---|---|---|---|
-| 1 Alert contract | pending | | | |
-| 2 FrameRingBuffer | pending | | | |
-| 3 ClipWriter | pending | | | |
-| 4 Persistence + p5a | pending | | | |
-| 5 Hub + /ws/alerts | pending | | | |
-| 6 AlertHandler | pending | | | |
-| 7 Notifier/Telegram/WhatsApp | pending | | | |
-| 8 Secrets + /notifiers/test | pending | | | |
-| 9 DeliveryWorker + stats | pending | | | |
-| 10 Clip route | pending | | | |
-| 11 Retention | pending | | | |
-| 12 System events + p5b | pending | | | |
-| 13 Runtime + lifespan | pending | | | |
-| 14 Rate limiter | pending | | | |
-| 15 Still replay | pending | | | |
-| 16 Frontend WS | pending | | | |
-| 17 Notifiers UI | pending | | | |
-| 18 Docs + gate + PR | pending | | | |
+| 1 Alert contract | done | 2026-10-17 | `4c6c8e6` | D1 ring 30s; event payload |
+| 2 FrameRingBuffer | done | 2026-10-17 | `28b84fe` | pre-roll ring, thread-safe |
+| 3 ClipWriter | done | 2026-10-17 | `c7ce384` | D2 fps clamp 1–15 libx264; D3 MJPEG per-request; quota gate |
+| 4 Persistence + p5a | done | 2026-10-17 | `bc0062b` | events+detections tables; migration `p5a_delivery_retry` |
+| 5 Hub + /ws/alerts | done | 2026-10-17 | `b1c94a1` | tenant-scoped broadcast; heartbeat 30s |
+| 6 AlertHandler | done | 2026-10-17 | `78e57a8` | D6 broadcast on event frames only |
+| 7 Notifier/Telegram/WhatsApp | done | 2026-10-17 | `75ae28a` | protocol + Telegram transport + WhatsApp stub |
+| 8 Secrets + /notifiers/test | done | 2026-10-17 | `4cf157d` | D11 Fernet `bot_token_enc`; real test messages |
+| 9 DeliveryWorker + stats | done | 2026-10-17 | `2c05239` | D4 retry `min(5*2**a, 3600)`s; delivery= DB poll (D14) |
+| 10 Clip route | done | 2026-10-17 | `34feaa4` | ranged streaming, media served off media_root |
+| 11 Retention | done | 2026-10-17 | `8149961` | batched prune + file unlink |
+| 12 System events + p5b | done | 2026-10-17 | `bb00985` | D5 null camera→"System"; migration `p5b_system_events` |
+| 13 Runtime + lifespan | done | 2026-10-17 | `cb9d0c3` | D10 `CAMBRAIN_RUNTIME_ENABLED` gate; DB bridge fills dims |
+| 14 Rate limiter | done | 2026-10-17 | `f816d12` | D9 in-memory 120/30/10 per min + documented exclusions |
+| 15 Still replay | done | 2026-10-17 | `5fb7f55` | replay with injectable detector (still path) |
+| 16 Frontend WS | done | 2026-10-17 | `10659c3` | ticker via WS + poll fallback; `ws: true` proxy |
+| 17 Notifiers UI | done | 2026-10-17 | `f8d35ac` | write-only token form; Test button; 178 frontend tests |
+| 18 Docs + gate + PR | in progress | 2026-10-17 | gate: `.tmp/gate-5-*.png` | Steps 1–4 done; Step 5 (PR/review/merge) pending |
 
 ## Gates
 
 **Phase 5 gate — "a Telegram photo arrives at 2am":** scripted headed-Playwright walkthrough (Task 18) proving: (1) motion on the live camera produces an event visible in the ticker within the WS frame, (2) the still and (after 20s) the clip render on the events page, (3) `.tmp/telegram_capture.json` holds a sendPhoto/sendVideo POST from the delivery worker, (4) frame dims are no longer `—×—` (bridge), (5) notifier Test button returns success in aria-live, (6) retention prunes a planted old event + its files, (7) full backend + frontend loops green.
+
+**Gate run — 2026-10-17 (all green):** RTSP feed = MediaMTX `:8554/cambbrain` + looping `backend/tests/fixtures/clips/gate.mp4`; backend :8765 with `CAMBRAIN_RUNTIME_ENABLED=1`, `CAMBRAIN_TELEGRAM_API_BASE=http://127.0.0.1:8799`, media root on D: (C: was at 99.9% — quota would refuse); vite :5173. Evidence: notifier saved + **"Test message sent."** (gate-5-1); frame dims bridged **768×432** on the camera tile — no `—×—` (gate-5-2; events-page rows carry no dims surface, tiles are the shipped surface); rule "Gate Demo" person 0.4 / **cooldown 5** (schema floor `ge=5` — the plan's 1s was invalid) / notify (gate-5-3); event + still in log + **107 `event` frames** over `/ws/alerts` to the page socket (gate-5-4); **clip playing inline at t=2.52s** (gate-5-5); delivery captured: **`/botSECRET-GATE-TOKEN/sendPhoto` 15238 B** with chat_id in body (gate-5-6); retention: planted 9-day-old event + bait files → `prune_events` pruned **1 row, files gone** (gate-5-7). The gate found a real bug — the clip `<video>` bound the raw `clip_url` (a video `src` cannot carry the Authorization header, unlike the still's authed-blob fetch) — fixed + tested in this phase. Screenshots `.tmp/gate-5-1..7.png`, script `.tmp/gate-5.mjs` (scratch, not committed).
 
 **Verification matrix (spec §12 additions):**
 

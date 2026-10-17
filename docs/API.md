@@ -280,7 +280,7 @@ Request body (optional):
 }
 ```
 
-Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when there is nothing to replay, or the event belongs to another camera or tenant. `422 VALIDATION_ERROR` names the frame size in its message when the camera has never produced one — the envelope's `field` slot stays `null` (Phase 2's handler never populates it). Evaluation runs at the event's `started_at` in UTC, and cooldown always reports "no recent trigger" because a replay carries no firing history. **Still-image upload is not implemented in Phase 3**: the JSON-only mutation rule blocks multipart, and a base64 still would drag model weights into API tests — deferred to Phase 5.
+Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when there is nothing to replay, or the event belongs to another camera or tenant. `422 VALIDATION_ERROR` names the frame size in its message when the camera has never produced one — the envelope's `field` slot stays `null` (Phase 2's handler never populates it). Evaluation runs at the event's `started_at` in UTC, and cooldown always reports "no recent trigger" because a replay carries no firing history. A still rides this same JSON body as **`image_b64`** (base64 JPEG): the mutation header stays JSON-only (plan D8, so multipart never enters the API), the detector arrives as an injected dependency so API tests never open model weights, and the image carries its own frame dimensions — no stored camera size is required.
 
 ```json
 {
@@ -409,6 +409,8 @@ Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when t
 
 `POST /api/v1/notifiers/test` sends a real test message and returns Telegram's response verbatim. A notifier config that has never delivered is not a working notifier.
 
+`GET /api/v1/notifiers` returns `{id, kind, enabled, config, has_token}`. The bot token is sealed at write time and **never leaves the server** — not even as ciphertext — so `has_token` is the only credential signal (spec A7.4); `config` carries public fields such as `chat_id`.
+
 ---
 
 ## 3. WebSocket
@@ -432,18 +434,16 @@ Token via `Sec-WebSocket-Protocol` (`cambrain.jwt.<token>`) or the first `messag
 }
 
 // Server → client
-{ "type": "camera_status", "data": { "camera_id": 5, "status": "offline",
-                                     "last_error": "…authentication failed" } }
-
-// Server → client
 { "type": "heartbeat", "data": { "ts": "2026-10-05T21:14:55Z" } }
 ```
 
 Server → client only. The socket carries alerts and status; all mutations go over HTTP, where they are authenticated, validated, rate-limited, and auditable. A WebSocket that mutates state is a WebSocket nobody tests.
 
-Heartbeat every 30s keeps proxies from idling the connection out. Client reconnects with jittered backoff, 1s → 30s, and **resyncs via a full `GET /events?since=` on reconnect** rather than trusting the socket for completeness — a dropped socket must not silently lose events, since the durable record is in the database.
+Heartbeat every 30s keeps proxies from idling the connection out (the shipped client force-reconnects after 45s of silence). Client reconnects with jittered backoff, 1s → 30s, and **resyncs via `GET /events?limit=5&sort=-started_at` on every successful (re)connect** rather than trusting the socket for completeness — a dropped socket must not silently lose events, since the durable record is in the database. The ticker also keeps its periodic poll, so a dead socket degrades to polling instead of silence.
 
-### `GET /api/v1/ws/frames`
+### `GET /api/v1/ws/frames` — deferred (Phase 4 D7)
+
+**Not shipped**: the live grid uses per-request MJPEG (`GET /cameras/{id}/stream`, plan D3) instead, so this multiplexed shape is preserved for resumption rather than implemented:
 
 Per-camera JPEG frames for the live grid, multiplexed:
 
@@ -511,10 +511,12 @@ Per client IP, fixed window.
 | `POST /auth/refresh` | 30/min |
 | `POST /cameras/{id}/test` | 10/min — each opens a real RTSP connection |
 | `GET /cameras/{id}/stream` | 12 concurrent per client IP |
-| `GET /ws/frames` | 10 fps subscribe rate |
+| `GET /ws/frames` | 10 fps subscribe rate (route deferred, D7) |
 | Everything else | 120/min |
 
 A camera-test rate limit is a hardware-protection limit, not a security formality: ten concurrent RTSP probes on a weak customer switch is a self-inflicted outage.
+
+Outside this table entirely: `/api/v1/auth/login` (it has the per-username limiter above), `/api/v1/system/health` (a liveness probe must never be throttled away), `/api/v1/cameras/{id}/stream`, and `/api/v1/ws/*` (long-lived connections, not request streams).
 
 ---
 

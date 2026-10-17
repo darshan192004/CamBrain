@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import install_error_handlers
 from app.api.middleware import CorrelationIdMiddleware, CsrfMiddleware
+from app.api.ratelimit import RateLimitMiddleware
 from app.api.routers.auth import router as auth_router
 from app.api.routers.cameras import router as cameras_router
 from app.api.routers.events import router as events_router
@@ -51,6 +52,9 @@ def create_app() -> FastAPI:
         docs_url=f"{API_PREFIX}/docs",
         lifespan=lifespan,
     )
+    # Order matters: last added is outermost. RateLimit sits inside CORS so
+    # 429s still carry CORS headers and the correlation id (T14).
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

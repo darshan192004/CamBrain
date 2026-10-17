@@ -57,6 +57,7 @@ DOCUMENTED_PATHS = {
     ("post", "/api/v1/notifiers/test"),
     ("get", "/api/v1/system/health"),
     ("get", "/api/v1/system/status"),
+    ("post", "/api/v1/system/pause"),
     ("get", "/api/v1/system/config"),
     ("post", "/api/v1/system/config"),
 }

@@ -15,6 +15,12 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class PauseRequest(BaseModel):
+    """POST /system/pause body: the tray's panic button in HTTP form."""
+
+    paused: bool
+
+
 class RefreshRequest(BaseModel):
     """POST /auth/refresh body."""
 

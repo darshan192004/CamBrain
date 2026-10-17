@@ -341,6 +341,8 @@ is new and load-bearing.
 | Task | Status | Date | Evidence | Notes |
 |---|---|---|---|---|
 | 1 First-run bootstrap | done | 2026-10-17 | `test_bootstrap.py` 8 green; suite 349+1skip; ruff/mypy(app) clean; `feat(core)` commit below | D6-4 refit: notice VERIFIED not mutated; knob `CAMBRAIN_FETCH_MODELS` (conftest=0); degrade reasons via `bootstrap.last_reason` → `/system/status.runtime_reason` |
+| 2 Tauri scaffold + child | done | 2026-10-17 | `cargo check`+`clippy` clean (CARGO_HOME on D:, msys64 dlltool first on PATH — C:\MinGW\bin dlltool is broken: "Invalid bfd target"); debug exe linked 6m55s; `feat(shell)` commit below | D6-1 engine.rs: env-resolved cmd/cwd, LOCALAPPDATA paths, CREATE_NO_WINDOW, backoff 1→60s + jitter, stable-run reset; pid via taskkill for tray |
+| 3 Tray/pause/instance/autostart | python-half done | 2026-10-17 | `test_system_pause.py` 7 green ×2; suite 356+1skip; `feat(system)` commit below | Runtime.pause/resume + lifecycle lock; AuditLog (SECURITY 7.5) FIRST writer via persist.write_audit; status.paused; stream_manager now really logs pipeline deaths (was swallowed, comment lied); Rust tray/single-instance/autostart still open |
 | 2 Tauri scaffold + child | pending | | | |
 | 3 Tray/pause/instance/autostart | pending | | | |
 | 4 Power-loss recovery | pending | | | |

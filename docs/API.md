@@ -371,6 +371,7 @@ Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when t
 | `GET` `POST` `PATCH` `DELETE` | `/api/v1/notifiers` | any / admin |
 | `POST` | `/api/v1/notifiers/test` | admin |
 | `GET` | `/api/v1/system/status` | any |
+| `POST` | `/api/v1/system/pause` | admin |
 | `GET` | `/api/v1/system/health` | any |
 | `GET` `POST` | `/api/v1/system/config` | admin |
 
@@ -407,6 +408,8 @@ Omit `event_id` to replay the camera's most recent event; `404 NOT_FOUND` when t
 `hardware_tier` is what [architecture.md §6](architecture.md) calls the detected capability tier. Surfacing it removes "why is it slow?" as a support question.
 
 `runtime_reason` appears in the payload **only** when first-run model bootstrap degraded (weights missing or failing their pinned SHA-256 after the one re-download): it carries the human reason, and the runtime starts without a detector until the weights are healthy again. Its absence reads as healthy. Bootstrap is an env knob, not a config payload field: `CAMBRAIN_FETCH_MODELS` (default on) turns it off for tests and deterministic environments.
+
+`POST /api/v1/system/pause` is the tray's panic button in HTTP form: `{"paused": true}` stops every runtime chain (sources, rings, alert stages, delivery worker, retention), `{"paused": false}` reopens them. It is idempotent — a repeated click changes nothing and writes nothing — and admin-only. Every *transition* writes one `audit_log` row (`system.pause` / `system.resume`, SECURITY 7.5); the customer-facing event log stays untouched, and because the delivery worker stops with the chains, a pause can never page the customer. `GET /system/status` carries the current `paused` flag so the dashboard can banner it.
 
 `POST /api/v1/notifiers/test` sends a real test message and returns Telegram's response verbatim. A notifier config that has never delivered is not a working notifier.
 

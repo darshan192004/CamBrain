@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import contextlib
+import logging
 import threading
 from collections.abc import Callable
 
@@ -21,6 +21,8 @@ from app.services.stream.pipeline import (
     PipelineStatus,
 )
 from app.services.stream.source import FrameSource
+
+log = logging.getLogger(__name__)
 
 SourceFactory = Callable[[CameraConfig], FrameSource]
 
@@ -122,8 +124,12 @@ class StreamManager:
         worker: _CameraWorker,
         fut: concurrent.futures.Future[None],
     ) -> None:
-        with contextlib.suppress(concurrent.futures.CancelledError):
-            fut.exception()  # swallow CancelledError and failures; log held them
+        try:
+            exc = fut.exception()
+        except concurrent.futures.CancelledError:
+            return
+        if exc is not None:
+            log.error("camera %s pipeline died: %r", camera_id, exc, exc_info=exc)
         with self._lock:
             # Identity guard: a removed-and-re-added camera must not have its
             # fresh worker deleted by the old one's late callback.

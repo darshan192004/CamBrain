@@ -107,7 +107,7 @@ Phases are sequenced so that **each phase ends with something demonstrable**. No
 
 ### Detector
 
-- [ ] **Benchmark YOLOX-s vs RT-DETR-r18** on real footage — this is the deferred decision, see [memory.md](memory.md)
+- [ ] Benchmark YOLOX-s vs RT-DETR-r18 on real N100 footage — deferred to the field-validation gate, NOT Phase-3 debt: YOLOX-s ships as the provisional default and the swap is one module; the benchmark closes with real target-hardware footage (spec §15, memory.md Open questions)
 - [x] `inference/tiers.py` — capability detection (AVX2/VNNI/core count)
 - [x] `inference/detector.py` — protocol, ONNX wrapper, preallocated buffers (`io_binding` deferred — plan deviation D4)
 - [x] `inference/pool.py` — bounded threadpool, one session per tier

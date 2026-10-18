@@ -203,8 +203,15 @@ Tracking is cheap on CPU and pays for itself by suppressing duplicate alerts and
 
 ## Open questions
 
-- [ ] YOLOX-s vs RT-DETR-r18 — Phase 3 benchmark, measured on real footage
-- [ ] Night/IR accuracy on real GIDC footage — must be an explicit Phase 3 test case
+Status note (2026-10-18, post-MVP): Phase 3 shipped with **YOLOX-s as the
+provisional default** (`spec.md` §10.4); the real-footage items below are not
+Phase-3 debt — they are field-validation gates on the target hardware, so
+launch-blockers of the hardware kind ("needs a camera / needs the N100"),
+tracked alongside `spec.md` §15 deferred decisions. See also
+[`superpowers/plans/2026-10-05-cambrain-mvp-plan.md`](superpowers/plans/2026-10-05-cambrain-mvp-plan.md) §Known open contradictions.
+
+- [ ] YOLOX-s vs RT-DETR-r18 - measure on real N100 footage (YOLOX-s ships provisional; swap is one module - `spec` §15)
+- [ ] Night/IR accuracy - real IR-lit footage (fixture `low_light.mp4` is a placeholder, not evidence)
 - [ ] Whether operators actually want smooth live video (decides WebRTC)
 - [ ] WhatsApp adapter timing, given Meta verification lead time
 - [ ] GUI vs Gujarati/Hindi localisation — likely valuable for the Rajkot market, unprompted so far

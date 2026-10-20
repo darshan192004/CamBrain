@@ -9,14 +9,14 @@ opencv-python-headless>=4.10.0 # MOG2 background subtraction. Apache-2.0.
                                 # headless build: no Qt, smaller on the box.
 
 # --- API ---
-fastapi>=0.115.0                # MIT.
+fastapi>=0.143.3                # MIT.
 uvicorn[standard]>=0.32.0       # BSD.
-pydantic>=2.9.0                 # MIT.
-pydantic-settings>=2.6.0        # MIT.
+pydantic>=2.14.1                 # MIT.
+pydantic-settings>=2.16.0        # MIT.
 websockets>=13.0                # BSD.
 
 # --- Persistence ---
-sqlalchemy>=2.0.35              # MIT.
+sqlalchemy>=2.1.5              # MIT.
 alembic>=1.14.0                 # MIT.
 
 # --- Security ---
